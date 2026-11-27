@@ -35,7 +35,7 @@ async function goneApp(dataDir: string): Promise<App> {
 describe('the project is found from the session folder and from the file the call names (R21)', () => {
   test('a session outside any project, a file inside one: that project is the one (it checks in)', async () => {
     const app = await makeApp({ phase: 'build' });
-    expect(await call(app, write(app, 'src/new.ts', 'x'), { cwd: tempDir() })).toEqual(SILENT);
+    expect(await call(app, write(app, 'notes.md', 'x'), { cwd: tempDir() })).toEqual(SILENT);
     expect(heartbeatSeen(app.root)).toBe(true);
   });
 
@@ -147,7 +147,7 @@ describe('a path like that in a call to a seam project (R25)', () => {
 
   test('the same path with no odd ending is not refused for its spelling', async () => {
     const app = await makeApp({ phase: 'build' });
-    expect(await call(app, pre('Write', { file_path: `\\\\?\\${app.root}\\src\\x.ts`, content: 'x' }))).toEqual(SILENT);
+    expect(await call(app, pre('Write', { file_path: `\\\\?\\${app.root}\\src\\x.md`, content: 'x' }))).toEqual(SILENT);
   });
 
   test('from a folder that is not a seam project it is none of the guard business', async () => {
