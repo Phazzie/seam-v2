@@ -13,10 +13,17 @@
 // Step markers inside function bodies are separate lines: `// Step N: <text>`.
 import type { FilePlan } from './plan.ts';
 
-/** Why `text` cannot go into a header line, or null if it can. */
+/** What a seam id and a promise id may look like. The plan schema uses the same rules. */
+export const SEAM_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+export const PROMISE_ID_PATTERN = /^P-[a-z0-9-]+-\d+$/;
+
+/**
+ * Why `text` cannot go into a header line, or null if it can. U+2028 and U+2029 count as line
+ * breaks, because JavaScript (and so the header reader) treats them as ones.
+ */
 export function headerTextProblem(text: string): string | null {
   if (text.length === 0) return "can't be empty";
-  if (/[\r\n]/.test(text) || text !== text.trim() || text.includes('*/')) {
+  if (/[\r\n\u2028\u2029]/.test(text) || text !== text.trim() || text.includes('*/')) {
     return "must be a single line with no spaces at either end and no '*/' in it";
   }
   return null;
@@ -24,6 +31,14 @@ export function headerTextProblem(text: string): string | null {
 
 /** The header text for one planned file. No trailing newline. */
 export function formatHeader(seam: string, file: FilePlan): string {
+  if (!SEAM_ID_PATTERN.test(seam)) {
+    throw new Error(`The header for ${file.path} can't use the seam id "${seam}": seam ids use lowercase letters, numbers and dashes.`);
+  }
+  for (const { id } of file.promises) {
+    if (!PROMISE_ID_PATTERN.test(id)) {
+      throw new Error(`The header for ${file.path} can't use the promise id "${id}": promise ids look like P-pricing-1 (P-, a name, a number).`);
+    }
+  }
   const texts = [file.purpose, file.inputs, file.outputs, ...file.steps, ...file.promises.map((p) => p.text)];
   for (const text of texts) {
     const problem = headerTextProblem(text);

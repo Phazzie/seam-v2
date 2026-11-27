@@ -24,6 +24,7 @@ const result = await build({
   target: 'node24',
   banner: { js: banner },
   legalComments: 'none',
+  minify: true,
   metafile: true,
   logLevel: 'info',
 });

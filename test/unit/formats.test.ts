@@ -52,11 +52,29 @@ describe('plan format', () => {
     expect(loadPlan(emptyDir)).toBeNull();
   });
   test('promise ids must look like P-name-1', () => {
-    expect(() => parsePlan(planWith({ promises: [{ id: 'pricing-1', text: 'x' }] }))).toThrow(/P-/);
+    expect(() => parsePlan(planWith({ promises: [{ id: 'pricing-1', text: 'x' }] }))).toThrow(
+      /promise ids look like P-pricing-1/,
+    );
   });
   test('text that could break out of the header comment is rejected', () => {
     expect(() => parsePlan(planWith({ purpose: 'sneaky */ code' }))).toThrow(/\*\//);
     expect(() => parsePlan(planWith({ steps: ['a\nb', 'c', 'd'] }))).toThrow(/single line/);
+    expect(() => parsePlan(planWith({ purpose: 'a\u2028b' }))).toThrow(/single line/);
+    expect(() => parsePlan(planWith({ purpose: 'a\u2029b' }))).toThrow(/single line/);
+  });
+  test('unknown keys are rejected at the top, in a seam and in a file', () => {
+    expect(() => parsePlan({ ...(PRACTICE_JSON as object), extra: 1 })).toThrow(/extra/);
+    expect(() => parsePlan(planWith({ sneaky: true }))).toThrow(/sneaky/);
+    const raw = structuredClone(PRACTICE_JSON) as { seams: Record<string, unknown>[] };
+    raw.seams[0].note = 'hello';
+    expect(() => parsePlan(raw)).toThrow(/note/);
+  });
+  test('seam ids use lowercase letters, numbers and dashes', () => {
+    for (const id of ['Pricing', 'a b', '-pricing', 'pricing/x', '']) {
+      const raw = structuredClone(PRACTICE_JSON) as { seams: { id: string }[] };
+      raw.seams[0].id = id;
+      expect(() => parsePlan(raw), `seam id "${id}"`).toThrow(/seam ids use lowercase/);
+    }
   });
   test('an unreadable plan file is named in the error', () => {
     expect(() => loadPlan(dirWith('plan/plan.json', '{oops'))).toThrow(/plan\/plan\.json is unreadable/);
@@ -84,6 +102,25 @@ describe('header format', () => {
     expect(lines).toContain(' *  2. Add the second price to it');
     expect(lines).toContain(' *  P-pricing-1: total(2, 3) returns 5');
     expect(lines.at(-1)).toBe(' */');
+  });
+  test('formatHeader refuses text that could break the header, including U+2028', () => {
+    const f = PRACTICE_PLAN.seams[0].files[0];
+    const withText = (over: Partial<typeof f>) => () => formatHeader('pricing', { ...f, ...over });
+    expect(withText({ purpose: 'a\u2028b' })).toThrow(/single line/);
+    expect(withText({ inputs: 'a\u2029b' })).toThrow(/single line/);
+    expect(withText({ outputs: 'x */ y' })).toThrow(/\*\//);
+    expect(withText({ steps: ['one', 'two\nthree', 'four'] })).toThrow(/single line/);
+    expect(withText({ promises: [{ id: 'P-pricing-1', text: 'a\rb' }] })).toThrow(/single line/);
+    expect(withText({ purpose: ' padded' })).toThrow(/single line/);
+    expect(withText({ purpose: '' })).toThrow(/can't be empty/);
+  });
+  test('formatHeader refuses a bad seam id or promise id', () => {
+    const f = PRACTICE_PLAN.seams[0].files[0];
+    expect(() => formatHeader('Pricing', f)).toThrow(/seam ids use lowercase/);
+    expect(() => formatHeader('a b\n * @seam evil', f)).toThrow(/seam ids use lowercase/);
+    expect(() => formatHeader('pricing', { ...f, promises: [{ id: 'P-x-1\n * ', text: 't' }] })).toThrow(
+      /promise ids look like P-pricing-1/,
+    );
   });
   test('text with no seam header parses as null', () => {
     expect(parseHeader('export const a = 1;\n')).toBeNull();
@@ -132,6 +169,6 @@ describe('lock format', () => {
     expect(() => loadLock(dirWith('.seam/lock.json', 'nope'))).toThrow(/lock\.json is unreadable/);
   });
   test('a lock entry of an unknown kind is rejected', () => {
-    expect(() => parseLock({ version: 1, files: { a: { kind: 'other' } } })).toThrow(/lock/);
+    expect(() => parseLock({ version: 1, files: { a: { kind: 'other' } } })).toThrow(/discriminator|kind/);
   });
 });

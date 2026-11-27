@@ -1,7 +1,7 @@
 // The plan file: plan/plan.json. It says what will be built, file by file, with the
 // steps and promises each file must keep. Frozen at approval; builders never see it whole.
 import { z } from 'zod';
-import { headerTextProblem } from './header.ts';
+import { PROMISE_ID_PATTERN, SEAM_ID_PATTERN, headerTextProblem } from './header.ts';
 import { loadJson, parseWith } from './read.ts';
 
 export const PLAN_PATH = 'plan/plan.json';
@@ -23,7 +23,7 @@ export const FilePlanSchema = z.strictObject({
   steps: z.array(headerText).min(3, 'needs at least 3 steps, each one specific and checkable'),
   promises: z.array(
     z.strictObject({
-      id: z.string().regex(/^P-[a-z0-9-]+-\d+$/, 'promise ids look like P-pricing-1 (P-, a name, a number)'),
+      id: z.string().regex(PROMISE_ID_PATTERN, 'promise ids look like P-pricing-1 (P-, a name, a number)'),
       text: headerText,
     }),
   ),
@@ -32,7 +32,7 @@ export const FilePlanSchema = z.strictObject({
 export type FilePlan = z.infer<typeof FilePlanSchema>;
 
 export const SeamPlanSchema = z.strictObject({
-  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'seam ids use lowercase letters, numbers and dashes'),
+  id: z.string().regex(SEAM_ID_PATTERN, 'seam ids use lowercase letters, numbers and dashes'),
   name: z.string().min(1),
   services: z.array(z.strictObject({ name: z.string(), address: z.string(), mutating: z.boolean() })),
   files: z.array(FilePlanSchema),
