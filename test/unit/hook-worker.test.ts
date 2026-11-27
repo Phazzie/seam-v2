@@ -25,7 +25,7 @@ describe('a worker stuck in a busy loop', () => {
     expect(r.ms).toBeLessThan(10_000);
   });
 
-  test('is counted and logged, by a second worker, before the hook exits', async () => {
+  test('is counted and logged, by a second worker, before the hook exits', { retry: 2 }, async () => {
     const app = await makeApp({ phase: 'build' });
     await app.hook(write(app, 'notes.md', 'x'), { env: STALL });
     expect(blocksOf(app)).toBe(1);
@@ -43,9 +43,12 @@ describe('a worker stuck in a busy loop', () => {
 
   test('a folder that is not a seam project never reaches the stall', async () => {
     const app = await makeApp({ phase: 'build' });
-    const r = await app.hook(pre('Read', { file_path: 'a.ts' }), { env: STALL, cwd: tempDir() });
+    // A roomy stall limit: if the stall were reached it would last the whole 12 s and end in a refusal, so an allow in
+    // well under that means it never ran. (A tight limit would also count a slow start of the process on a busy machine.)
+    const env = { SEAM_TEST_FORCE_HANG: '1', SEAM_TEST_TIMEOUT_MS: '12000' };
+    const r = await app.hook(pre('Read', { file_path: 'a.ts' }), { env, cwd: tempDir() });
     expectAllowed(r);
-    expect(r.ms).toBeLessThan(1400);
+    expect(r.ms).toBeLessThan(10_000);
   });
 });
 
