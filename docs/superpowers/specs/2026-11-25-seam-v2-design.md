@@ -127,6 +127,7 @@ The guard enforces this table. Hooks know which agent is calling, so "who" is ch
 | **Builder** | fresh subagent, one per file try | only the bodies of its one assigned file | allowlist only: its file, contracts, its promise sentences, files its file imports, and (for mocks and adapters) its own seam's fixtures. Never tests. Search tools only inside that allowlist | no |
 | **Describer** | fresh subagent, read-only | nothing | only the comment-stripped copy of one file | no |
 | **Checker** | fresh subagent | only its verdict file | plan, describer's account, stripped code, tests (when reviewing tests) | no |
+| **Design pass** | fresh subagent, after build | styling only: CSS files, `className` text, style values (15.8) | the screens it restyles | no |
 | **Scripts and hooks** | Node code in the plugin | skeletons, fixtures (probe script only), records, log, phase | everything | n/a |
 
 Main AI terminal: an allowlist in every phase (15.10). Any agent type not in this table
@@ -214,8 +215,9 @@ All in Node, registered as plugin hooks.
   Any change it didn't expect is put back from the record, logged, and counted as a strike
   against whoever made it. This catches writes made through a command, which can't be fully
   read in advance.
-- **Before reads** (PreToolUse on `Read|Glob|Grep`): the builder may not read tests or
-  fixtures; the describer may only read its stripped file.
+- **Before reads** (PreToolUse on `Read|Glob|Grep`): the builder reads only its allowlist
+  (section 5; fixtures only for mock and adapter builders, as frozen data modules, 18.5),
+  never tests; the describer may only read its stripped file.
 - **When a builder tries to finish** (SubagentStop): the guard runs that file's tests and the
   code rules (no silent catch, no `any`, no `ts-ignore`, at most 200 lines, only
   `src/config` reads env). If any fail, it refuses the finish and tells the builder **which
@@ -350,7 +352,10 @@ Details:
 
 A CI workflow in the app repo re-runs, from scratch, on each pull request: fingerprints
 against `lock.json`, every code file in the plan, no skipped tests, all tests green, code
-rules, and that the lock matches the fingerprints recorded with each approval. The CI
+rules, and that the lock matches the fingerprints recorded with each approval. (Those records
+live in the repo and could in principle be edited to match; making them tamper-proof is the
+signing held back in section 17. The CI check catches mistakes and casual shortcuts, not a
+determined forger.) The CI
 workflow is a required check from `main`, so a PR can't weaken it. This is the backstop for
 anything done on the local machine that the hooks missed.
 
@@ -498,7 +503,7 @@ Each stage ends with its cheat tests green and one run on the practice app.
 - **Cutover is a pull request**, never a direct change to `main`. It moves `seam-app/` to the
   root and removes the old app. The owner merges it. The plugin never deploys.
 
-## 14. Owner's answers (2026-11-25)
+## 14. Owner's answers (2026-11-25 and 2026-11-26)
 
 1. **Where it runs:** the Claude Code desktop app and the terminal CLI, both on the owner's
    Windows machine. Cloud, web and phone sessions are not supported.
@@ -608,3 +613,102 @@ ordinary shortcuts:
 - Tests run in a separate locked-down Node process (no writes outside temp, no network).
 - Defences against faked keyboards, scripted windows and pseudo-terminals.
 - CI verifying approvals cryptographically instead of by recorded fingerprints.
+
+## 18. Fixes from the Fable and Haiku reviews (2026-11-27)
+
+Two more cold reviews (different models) of the slimmed doc. Both: the core idea is sound;
+stages 1 and 2 can be planned with these fixes; stage 3 needs the second design pass. Where
+this section disagrees with an earlier one, this section wins.
+
+**Stage 1 and 2 (part of the plan now)**
+
+1. **Cheat tests are tagged by stage.** Each row in section 9 says which stage makes it
+   testable. Stage 1's gate is only the guard-level cheats (1-8, 10, 12, 15-17, 19-21);
+   the rest join the gate in the stage that builds what they test.
+2. **Formats come first.** Stage 1 starts by fixing the plan, skeleton and lock formats,
+   since the guard fingerprints files whose shape stage 2 produces.
+3. **More live checks in stage 1:** that Claude's command tools really have no interactive
+   terminal (the approval window relies on it); whether builder edits trigger Claude Code
+   permission prompts (setup then pre-allows edits under the new app folder only); how a hook
+   timeout shows up compared with a failing test; the hook time limit against one file's tests.
+4. **Guard errors are not builder failures.** A crash or timeout in the guard returns a
+   separate "guard error" result. It costs the builder no test run and no strike. Three in a
+   row halt the run and alert the owner.
+5. **Fixtures as frozen data modules.** The probe script saves each fixture as an importable
+   data file (e.g. `fixtures/orders.ts`), frozen at approval 2. Mocks and adapter tests import
+   it; nobody reads fixture files with `fs` at runtime, so the `fs` ban in builder bodies
+   (15.7) stands. Mock and adapter builders may read their own seam's fixture modules.
+6. **Fingerprints cover named items,** not "everything except bodies": the header, each step,
+   each export and its signature, and the list of planned imports. Private top-level helpers
+   (15.13) are therefore allowed without breaking the lock.
+7. **Installs go through `seam add <package>`,** allowed only for packages in the plan. It
+   updates `package.json` and the lock file and re-fingerprints them, so the tamper check
+   doesn't undo it. `node_modules`, build output and anything git ignores are never "code
+   files" (refines 15.4).
+8. **Commits and PRs go through `seam commit` and `seam pr`,** since the main AI's git access
+   is read-only.
+9. **Hollow rule, fairer.** The hollow value is built from each function's return type (an
+   empty list, empty object, zero, false, or nothing rendered). Tests must fail on the hollow
+   version per promise, except promises the checker marks as legitimately "empty" cases ("shows
+   nothing when logged out"); those exemptions are listed on the freeze page. Honest edge-case
+   tests are never punished.
+10. **Contracts: no function bodies at all.** No `.transform`, `.refine`, `.superRefine` or
+    `.preprocess` with code; only Zod's built-in checks. Any rule that needs code is a planned
+    file with steps and tests.
+11. **Hard-coded answers.** Builders are shown expected values when a test fails, so a script
+    flags any of those exact values appearing in the body, and the checker is told to look for
+    lookup tables keyed on test inputs. (A second, hidden fixture set for adapters is a stage 4
+    item.)
+12. **Nothing quietly dropped.** A trace table, checked by script, maps every FEATURES and
+    inventory line to promise IDs. For existing apps, the inventory is also checked against the
+    old app's actual routes and imports. Anything uncovered is shown on the freeze page.
+13. **The freeze page is plain English,** not fingerprints: what will be built, the three
+    riskiest items, features with no promise, hollow-rule exemptions, probe addresses, and which
+    files many others depend on.
+14. **Agent instructions by token.** Instead of matching long text, the main AI starts each
+    agent with a short one-time token from `seam next`; the SubagentStart hook injects the real
+    instructions. The guard blocks agent starts whose prompt isn't a valid token. (Replaces
+    15.1's text matching, which relied on an unverified hook ability.)
+15. **Approval window started only from its shortcut.** `seam approve` checks it was launched by
+    the desktop shortcut's launcher, not by a `node`, `npx` or `Start-Process` command.
+16. **Builders aren't blind.** A "typecheck my file" action is free (no test run used), compile
+    errors and stack traces are passed back, and builders may read type definitions of packages
+    in the plan.
+17. **The 200-line limit is estimated at plan review.** If a file still overruns, that's a plan
+    change (split it), not a strike.
+18. **Wrong tests get caught early.** After strike 1, the checker compares the failing test with
+    its promise before try 2. A defective test goes to the owner instead of burning a builder.
+19. **"I'm stuck" must quote the failing promise,** and each file gets one stuck retry. Parked
+    files lead the morning report.
+20. **Rebuild beside, made consistent:**
+    - The old app's tree is a named "legacy" exemption: protected read-only, not "code missing
+      from the plan".
+    - Hooks and the CI check apply to `seam-app/` and the seam records only, so unrelated PRs to
+      `main` aren't blocked.
+    - Setup reads the repo's existing `CLAUDE.md`, `AGENTS.md` and `.claude/` hooks and shows the
+      owner any that conflict with seam rules before starting.
+    - Hotfixes on `main` are brought in with `seam sync`, which may touch only the legacy tree.
+21. **Probes, safely.** The probe script starts and stops the old app itself (background runs
+    stay blocked). The inventory marks each endpoint as read-only or as changing something;
+    probes default to read-only, and changing calls (a real order, a sent email) are recorded only
+    with the owner's approval.
+22. **Heartbeat across the whole build.** Gaps in hook check-ins are recorded continuously, not
+    just at freeze and done, and the user-level Claude Code settings and plugin settings are on
+    the protected list.
+
+**Added to the stage 3 and 4 design pass (section 16)**
+
+- **Keeping an overnight run alive:** the main session will end its turn, fill its context or
+  hit a usage limit. Design an outer runner (a fresh session per file, resuming from the
+  records) or a Stop hook that refuses while work remains, plus `seam resume`, a desktop
+  notification on stall, and a time cap per night.
+- **Parking cascades:** a parked config or auth file can stop everything early. Show dependents
+  at freeze, give heavily depended-on files extra tries.
+- **Cost and time:** measure minutes and cost per file (builder, describer, checker) on the
+  practice app before promising overnight for a large app.
+- **Checker quality:** verdicts cite lines per step (a script validates them); occasional seeded
+  defects audit the checker.
+- **Reopen safety:** a reopen approval shows, in plain English, any promise or test removed or
+  weakened. Consider pausing the whole build during a reopen instead of per-seam phases.
+- **Cutover:** the lock rewrite and lifting the legacy protection happen as one approved,
+  scripted step.
