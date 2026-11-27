@@ -23,12 +23,24 @@ function memberName(name: ts.PropertyName, sf: ts.SourceFile): string {
   return ts.isComputedPropertyName(name) ? `[${name.expression.getText(sf)}]` : name.text;
 }
 
+const isStatic = (node: ts.Node): boolean => ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
+
+/**
+ * The name of a class member or object member. A getter and a setter of one property, and a static member and an
+ * instance one of one name, are different functions, so the name says which: `get total`, `set total`, `static make`.
+ */
+function memberLabel(node: ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration | ts.PropertyDeclaration, sf: ts.SourceFile): string {
+  const kind = ts.isGetAccessorDeclaration(node) ? 'get ' : ts.isSetAccessorDeclaration(node) ? 'set ' : '';
+  return `${isStatic(node) ? 'static ' : ''}${kind}${memberName(node.name, sf)}`;
+}
+
 /** What a function, object or class expression is assigned to, if anything: `const f = ...`, `{ f: ... }`, `x.f = ...`. */
 function assignedName(node: ts.Node, sf: ts.SourceFile): string | null {
   let at = node.parent;
   while (isWrapper(at)) at = at.parent;
   if (ts.isVariableDeclaration(at) && ts.isIdentifier(at.name)) return at.name.text;
-  if (ts.isPropertyAssignment(at) || ts.isPropertyDeclaration(at)) return memberName(at.name, sf);
+  if (ts.isPropertyDeclaration(at)) return memberLabel(at, sf);
+  if (ts.isPropertyAssignment(at)) return memberName(at.name, sf);
   if (ts.isExportAssignment(at)) return 'default';
   if (ts.isBinaryExpression(at) && at.operatorToken.kind === ts.SyntaxKind.EqualsToken) return at.left.getText(sf);
   return null;
@@ -38,7 +50,7 @@ function assignedName(node: ts.Node, sf: ts.SourceFile): string | null {
 function labelOf(node: BodyNode, sf: ts.SourceFile): string {
   if (ts.isConstructorDeclaration(node)) return 'constructor';
   if (ts.isClassStaticBlockDeclaration(node)) return 'static';
-  if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) return memberName(node.name, sf);
+  if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) return memberLabel(node, sf);
   if (ts.isFunctionDeclaration(node)) return node.name?.text ?? 'default';
   const own = ts.isFunctionExpression(node) && node.name ? `(function ${node.name.text})` : undefined; // its name is not a name in the file
   return assignedName(node, sf) ?? own ?? '(anonymous)';
