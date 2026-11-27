@@ -1,7 +1,7 @@
 // Reading what Claude Code sent on stdin, and finding the paths a tool call names. Kept small on purpose:
 // the hook's main thread uses it, and it should not have to load the path and state code just to read a request.
 import type { HookInput } from '../types.ts';
-import { commandTargets } from './commandtext.ts';
+import { commandTargets, readingsOf } from './commandtext.ts';
 import { COULDNT_READ, describeError, refusal, SILENT } from './output.ts';
 import type { HookEvent, HookOutput } from './output.ts';
 
@@ -76,14 +76,45 @@ export function fieldTargetsOf(input: HookInput): string[] {
 const COMMAND_TOOLS = new Set(['Bash', 'PowerShell']);
 
 /**
+ * What narrows a search to some files: a Glob's `pattern` and a Grep's `glob` (a Grep's `pattern` is text to find,
+ * not a path). Undefined for any other tool, and for a field that is empty or not text.
+ */
+export function filterOf(input: HookInput): string | undefined {
+  const tool = input.tool_name;
+  const value = tool === 'Glob' ? input.tool_input?.pattern : tool === 'Grep' ? input.tool_input?.glob : undefined;
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * The folder (or file, when there is no wildcard) a pattern starts from: its text before the first wildcard, cut back
+ * to the last separator and keeping it. `C:/proj/tests/**` is `C:/proj/tests/`; `**` and `*.ts` start from nowhere, ''.
+ */
+export function literalPrefix(pattern: string): string {
+  const wild = pattern.search(/[*?[{]/);
+  if (wild === -1) return pattern;
+  const head = pattern.slice(0, wild);
+  return head.slice(0, Math.max(head.lastIndexOf('/'), head.lastIndexOf('\\')) + 1);
+}
+
+/** Does this text start at a root rather than at the folder it is used from: a drive, a separator (so a network path too) or `~`? */
+export const isRooted = (text: string): boolean => /^(?:[a-z]:|[\\/]|~)/i.test(text);
+
+/** An absolute filter names the place it starts from by itself, whatever `path` says, in every reading of it (R20). */
+function filterTargetsOf(input: HookInput): string[] {
+  const filter = filterOf(input);
+  return filter === undefined || !isRooted(filter) ? [] : readingsOf(literalPrefix(filter));
+}
+
+/**
  * Everything the call names: the path fields, and for a shell command the paths and folders it mentions
  * (`commandTargets`, with MSYS, Cygwin and WSL forms made drive paths too, R20). A command run from a folder
- * that is not a seam project, which changes into one or names a path in one, is then that project's (R41).
+ * that is not a seam project, which changes into one or names a path in one, is then that project's (R41). So is a
+ * Glob or Grep whose absolute pattern starts in one (R21): the project is asked about where the search really goes.
  */
 export function targetsOf(input: HookInput): string[] {
   const command = input.tool_input?.command;
   const mentioned = COMMAND_TOOLS.has(input.tool_name ?? '') && typeof command === 'string' ? commandTargets(command) : [];
-  return [...fieldTargetsOf(input), ...mentioned];
+  return [...fieldTargetsOf(input), ...mentioned, ...filterTargetsOf(input)];
 }
 
 /** Is a path field there but not text (a number, a list)? The tool call is then not one the guard can read. */
