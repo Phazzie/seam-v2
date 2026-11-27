@@ -11,6 +11,7 @@ import { loadState } from '../../src/formats/state.ts';
 import type { SeamState } from '../../src/formats/state.ts';
 import { snapshotProtected } from '../../src/guard/tamper.ts';
 import { writeLock } from '../../src/lib/fingerprint.ts';
+import { registerProject } from '../../src/lib/paths.ts';
 import type { Ctx, HookInput, Phase } from '../../src/types.ts';
 import { FIXTURE, skeleton } from './code.ts';
 import { interpret, runNode } from './run.ts';
@@ -100,8 +101,7 @@ export async function makeApp(opts: AppOptions): Promise<App> {
   };
   put(root, '.seam/state.json', JSON.stringify(state, null, 2));
   put(root, '.seam/env.json', JSON.stringify({ dataDir }));
-  // Task 4's registerProject replaces this hand-written registry entry.
-  put(dataDir, 'projects.json', JSON.stringify({ projects: [root.replace(/\\/g, '/')] }));
+  registerProject(root, dataDir);
   for (const [rel, text] of Object.entries(opts.files ?? {})) put(root, rel, text);
 
   if (opts.lock) {
