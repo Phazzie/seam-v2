@@ -3,10 +3,12 @@
 //
 // The builder control needs the protected-file snapshot (`makeApp` with a lock takes one), which is
 // Task 12's: until then it fails with "not implemented". The others run against the real write decision.
-import { describe, test } from 'vitest';
+import { beforeAll, describe, test } from 'vitest';
 import { asBuilder, asMain, makeApp } from '../helpers/app.ts';
-import { expectAllowed, write } from '../helpers/calls.ts';
+import type { App } from '../helpers/app.ts';
+import { expectAllowed, run, write } from '../helpers/calls.ts';
 import { TOTAL, total } from '../helpers/code.ts';
+import type { Phase } from '../../src/types.ts';
 
 describe('controls: the guard lets legitimate work through', () => {
   test('the builder whose turn it is can Write the correctly filled total (header, steps, signature intact)', async () => {
@@ -24,5 +26,20 @@ describe('controls: the guard lets legitimate work through', () => {
   test('control for cheat 20: the main agent can Write notes.md when nothing is forced to fail', async () => {
     const app = await makeApp({ phase: 'build' });
     expectAllowed(await app.hook(write(app, 'notes.md', 'hello\n', asMain())));
+  });
+
+  // Task 3's review: a guard that refused every command would pass all the command cheats (2, 7, 10, 12, 21).
+  // These run the real hook in a seam project, in the phases the cheats use, and in both shells.
+  describe.each<Phase>(['plan1', 'skeleton', 'build'])('control for the command cheats, in %s', (phase) => {
+    let app: App;
+    beforeAll(async () => {
+      app = await makeApp({ phase });
+    });
+    test.each<['Bash' | 'PowerShell', string]>([
+      ['Bash', 'git status'], ['PowerShell', 'git status'], ['Bash', 'npm test'], ['PowerShell', 'npm test'], ['Bash', 'npm run typecheck'],
+      ['Bash', 'npx vitest run test/total.test.ts'], ['Bash', 'seam report'], ['PowerShell', 'seam status'], ['Bash', 'git log --oneline -5'], ['Bash', 'git diff'],
+    ])('the main agent can run %s: %s', async (tool, command) => {
+      expectAllowed(await app.hook(run(tool, command, asMain())));
+    });
   });
 });

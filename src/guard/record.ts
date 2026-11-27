@@ -4,13 +4,13 @@ import { recordBlock } from '../lib/store.ts';
 import type { HookInput } from '../types.ts';
 import { describeError } from './output.ts';
 import type { HookEvent } from './output.ts';
-import { targetsOf } from './request.ts';
+import { fieldTargetsOf } from './request.ts';
 
 const COMMAND_SNIPPET = 80;
 
 /** What happened, for the log: `tried Write on src/a.ts: <reason>`. */
 export function whatHappened(input: HookInput, event: HookEvent, reason: string): string {
-  const [target] = targetsOf(input);
+  const [target] = fieldTargetsOf(input);
   const command = input.tool_input?.command;
   let where = '';
   if (target !== undefined) where = ` on ${target}`;
