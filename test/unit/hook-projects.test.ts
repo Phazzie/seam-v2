@@ -174,6 +174,8 @@ describe.skipIf(process.platform !== 'win32')('a network or device path the guar
 
   test('from a folder that is not a seam project the guard stays out of it', async () => {
     const app = await makeApp({ phase: 'build' });
-    expect(await call(app, pre('Read', { file_path: String.raw`\\evil-host\share\x.ts` }), { cwd: tempDir() })).toEqual(SILENT);
+    const out = await call(app, pre('Read', { file_path: String.raw`\\evil-host\share\x.ts` }), { cwd: tempDir() });
+    expect(out).toMatchObject(SILENT);
+    expect(out.note, 'the cause is said on stderr').toMatch(/cannot be checked, so it is refused/);
   });
 });

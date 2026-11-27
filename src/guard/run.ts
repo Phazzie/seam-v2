@@ -15,13 +15,12 @@ import type { HookInput } from '../types.ts';
 import { buildCtx } from './context.ts';
 import { raceDeadline } from './deadline.ts';
 import { decide } from './dispatch.ts';
-import { hasUnreadablePath, targetsOf } from './input.ts';
 import { COULDNT_READ, internalError, RECORDS_MISSING, refusal, SILENT, TOOK_TOO_LONG } from './output.ts';
 import type { HookEvent, HookOutput } from './output.ts';
 import { resolveProject } from './project.ts';
 import type { Found } from './project.ts';
 import { recordRefusal } from './record.ts';
-import { prepare } from './request.ts';
+import { hasUnreadablePath, prepare, targetsOf } from './request.ts';
 
 /** Ways to run `runHook` differently, for the worker and for tests. */
 export interface RunOptions {
@@ -84,7 +83,9 @@ async function inSeamProject(run: Run, found: Extract<Found, { kind: 'seam' }>):
 async function guarded(run: Run): Promise<HookOutput> {
   try {
     const found = resolveProject(run.input, run.env.dataDir ?? NO_DATA_DIR);
-    if (found.kind === 'none') return SILENT;
+    if (found.kind === 'none') {
+      return found.doubt === undefined ? SILENT : { ...SILENT, note: `a path could not be checked (${found.doubt}), so the call was left alone as not part of a seam project` };
+    }
     // With the records gone there is nowhere to count the block.
     if (found.kind === 'missing') return refusal(run.event, RECORDS_MISSING);
     return await inSeamProject(run, found);

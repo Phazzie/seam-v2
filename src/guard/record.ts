@@ -2,9 +2,9 @@
 import { roleOf } from '../lib/roles.ts';
 import { recordBlock } from '../lib/store.ts';
 import type { HookInput } from '../types.ts';
-import { targetsOf } from './input.ts';
 import { describeError } from './output.ts';
 import type { HookEvent } from './output.ts';
+import { targetsOf } from './request.ts';
 
 const COMMAND_SNIPPET = 80;
 

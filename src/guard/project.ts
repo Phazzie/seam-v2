@@ -3,14 +3,21 @@
 // project while the call names a file in a second), so both are asked (Ruling R21) and the stricter
 // answer wins: `missing` beats `seam`, and `seam` beats `none`.
 import { isPathRefusal } from '../lib/pathcheck.ts';
-import { findProject } from '../lib/paths.ts';
+import { findProject, resolveReal } from '../lib/paths.ts';
 import type { ProjectLookup } from '../lib/paths.ts';
 import type { HookInput } from '../types.ts';
-import { fromCwd, targetsOf } from './input.ts';
-import { TWO_PROJECTS } from './output.ts';
+import { describeError, internalError, TWO_PROJECTS } from './output.ts';
+import { targetsOf } from './request.ts';
 
-/** `problem` is set when the call is for a seam project but cannot be allowed to go on, with the reason why. */
-export type Found = { kind: 'none' } | { kind: 'missing'; root: string } | { kind: 'seam'; root: string; problem: string | null };
+/**
+ * `problem` is set when the call is for a seam project but cannot be allowed to go on, with the reason why.
+ * `doubt` is set when a path could not be looked at and nothing else showed a seam project: the call is
+ * left alone, and the cause is said on stderr.
+ */
+export type Found =
+  | { kind: 'none'; doubt?: string }
+  | { kind: 'missing'; root: string }
+  | { kind: 'seam'; root: string; problem: string | null };
 
 const fromLookup = (lookup: ProjectLookup): Found => (lookup.kind === 'seam' ? { ...lookup, problem: null } : lookup);
 
@@ -23,20 +30,30 @@ function merge(found: Found, there: ProjectLookup): Found {
 }
 
 /**
- * Look for a project from the session's folder and from every path the call names. A path the path
- * code refuses on purpose (a network path it cannot check) stops a call that is already in a seam
- * project; from a folder that is not one the guard stays out of it. Throws for anything else that goes wrong.
+ * Look for a project from the session's folder and from every path the call names. A path that cannot be
+ * looked at (the path code refuses it on purpose, as with a network path, or the file system will not
+ * answer, as with `C:\pagefile.sys` or `System Volume Information`) is not known to be anything. If
+ * nothing else shows a seam project the call is left alone and the cause is passed on as `doubt`. If the
+ * session folder or another path does show one, the call is refused for it: with the path code's own words
+ * for a refusal, and as an internal error for anything else.
  */
 export function resolveProject(input: HookInput, dataDir: string): Found {
-  let found = fromLookup(findProject(input.cwd, dataDir));
-  let refused: string | null = null;
-  for (const target of targetsOf(input)) {
+  const starts = [() => input.cwd, ...targetsOf(input).map((target) => () => resolveReal(input.cwd, target))];
+  let found: Found = { kind: 'none' };
+  let doubted = false;
+  let doubt: unknown;
+  for (const start of starts) {
     try {
-      found = merge(found, findProject(fromCwd(input, target), dataDir));
+      found = merge(found, findProject(start(), dataDir));
     } catch (err) {
-      if (!isPathRefusal(err)) throw err;
-      refused ??= err.message;
+      if (!doubted) doubt = err;
+      doubted = true;
     }
   }
-  return found.kind === 'seam' && found.problem === null && refused !== null ? { ...found, problem: refused } : found;
+  if (!doubted) return found;
+  if (found.kind === 'none') return { kind: 'none', doubt: describeError(doubt) };
+  if (found.kind === 'seam' && found.problem === null) {
+    return { ...found, problem: isPathRefusal(doubt) ? doubt.message : internalError(doubt) };
+  }
+  return found;
 }

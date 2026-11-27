@@ -74,23 +74,28 @@ describe('a refusal printed by the real bundle', () => {
 });
 
 describe('a request that never finishes arriving', () => {
-  test('is answered with a refusal by the guard itself, when its time is up', async () => {
+  const TOOK_TOO_LONG = 'seam guard took too long to decide, so it was blocked to be safe';
+
+  test.each([
+    ['before a tool', '{"hook_event_name":"PreToolUse","tool_name":"Read",', {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: TOOK_TOO_LONG },
+    }],
+    // Review fix, minor 2: the refusal is worded for the event the text so far says it is for.
+    ['after a tool', '{"session_id":"s","hook_event_name":"PostToolUse","tool_name":"Bash","tool_resp', { decision: 'block', reason: TOOK_TOO_LONG }],
+    ['with no event in it yet', '{"session_id":"s","transcript_pa', {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: TOOK_TOO_LONG },
+    }],
+  ])('is answered with a refusal by the guard itself, when its time is up (%s)', async (_what, partial, expected) => {
     const started = Date.now();
     const env = { ...process.env, SEAM_TEST_TIMEOUT_MS: '1500' };
     const child = spawn(process.execPath, [join(DIST, 'hook.mjs')], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env });
-    child.stdin.write('{"hook_event_name":"PreToolUse","tool_name":"Read",');
+    child.stdin.write(partial);
     let stdout = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk));
     const code = await new Promise<number | null>((done) => child.on('close', done));
     expect(code).toBe(0);
     expect(Date.now() - started).toBeGreaterThan(1000);
     expect(Date.now() - started).toBeLessThan(10_000);
-    expect(JSON.parse(stdout)).toEqual({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: 'seam guard took too long to decide, so it was blocked to be safe',
-      },
-    });
+    expect(JSON.parse(stdout)).toEqual(expected);
   }, 30_000);
 });

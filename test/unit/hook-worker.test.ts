@@ -1,7 +1,7 @@
 // The hook's worker thread in the real bundle (R40): the guard's work runs in dist/hook-worker.mjs, and the
 // main thread (dist/hook.mjs) keeps the clock and owns the output. A worker that is stuck in a loop is cut
 // off, and the refusal is counted; a hook with no worker, or with input it can read without one, behaves.
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { makeApp } from '../helpers/app.ts';
@@ -71,5 +71,45 @@ describe('the worker missing', () => {
     expectAllowed(await run({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', cwd: root, tool_input: {} }));
     expectAllowed(await run({ hook_event_name: 'SubagentStop', cwd: root }));
     expectDenied(await run({ hook_event_name: 'PreToolUse', tool_name: 'Write', cwd: root, tool_input: 'x' }), /couldn't read the request/, { failClosed: true });
+  });
+
+  test('a folder that is not a seam project is answered with silence by the main thread alone', async () => {
+    const { run } = await pluginWithoutWorker();
+    const elsewhere = tempDir();
+    const target = { file_path: join(elsewhere, 'x.md'), content: 'x' };
+    const r = await run({ hook_event_name: 'PreToolUse', tool_name: 'Write', cwd: elsewhere, tool_input: target });
+    expectAllowed(r);
+    expect(r.stderr).toBe('');
+    expectAllowed(await run({ hook_event_name: 'PostToolUse', tool_name: 'Bash', cwd: elsewhere, tool_input: { command: 'ls' }, tool_response: {} }));
+  });
+});
+
+// Review fix, critical 1: an answer that Claude Code would read as "no decision" must never be printed.
+describe('a worker that answers with something the hook may not print', () => {
+  async function pluginWhoseWorkerSays(out: unknown) {
+    const app = await makeApp({ phase: 'build' });
+    const script = `import { parentPort } from 'node:worker_threads';\nparentPort.postMessage({ kind: 'answer', out: ${JSON.stringify(out)} });\n`;
+    writeFileSync(join(app.pluginRoot, 'dist/hook-worker.mjs'), script);
+    const env = { ...process.env, CLAUDE_PLUGIN_DATA: app.dataDir, CLAUDE_PLUGIN_ROOT: app.pluginRoot };
+    const input = { hook_event_name: 'PreToolUse', tool_name: 'Read', cwd: app.root, tool_input: { file_path: app.abs('a.ts') } };
+    return interpret(await runNode(join(app.pluginRoot, 'dist/hook.mjs'), [], JSON.stringify(input), app.root, env));
+  }
+
+  test.each([
+    ['an empty object', {}],
+    ['null', null],
+    ['text that is not JSON', { stdout: 'hello' }],
+    ['no output but exit code 1', { stdout: '', exitCode: 1 }],
+    ['text and exit code 0', { stdout: 'hello', exitCode: 0 }],
+  ])('%s is refused by the real hook, with exit code 0', async (_what, out) => {
+    const r = await pluginWhoseWorkerSays(out);
+    expectDenied(r, /not one the hook can print/, { failClosed: true });
+    expect(r.exitCode).toBe(0);
+    expect(r.outputError).toBe('');
+  });
+
+  test('a good answer from the same stand-in is still printed', async () => {
+    const r = await pluginWhoseWorkerSays({ stdout: '', exitCode: 0 });
+    expectAllowed(r);
   });
 });

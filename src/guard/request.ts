@@ -1,5 +1,5 @@
-// Reading what Claude Code sent on stdin. Kept small on purpose: the hook's main thread uses it, and it
-// should not have to load the path and state code just to read a request.
+// Reading what Claude Code sent on stdin, and finding the paths a tool call names. Kept small on purpose:
+// the hook's main thread uses it, and it should not have to load the path and state code just to read a request.
 import type { HookInput } from '../types.ts';
 import { COULDNT_READ, describeError, refusal, SILENT } from './output.ts';
 import type { HookEvent, HookOutput } from './output.ts';
@@ -10,10 +10,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 export type Parsed = { ok: true; input: HookInput; event: HookEvent | null } | { ok: false; event: HookEvent; why: string };
 
 /**
- * Which event a request that would not parse was for, so the refusal can be worded for it. A
- * PostToolUse that cannot be read is blocked; anything else is denied.
+ * Which event a request was for, looked for in the text itself, so a refusal can be worded for it even when
+ * the request cannot be parsed (it was cut off, or never finished arriving). A PostToolUse is blocked and
+ * anything else is denied, so an event that cannot be told is taken as PreToolUse.
  */
-function sniffEvent(raw: string): HookEvent {
+export function sniffEvent(raw: string): HookEvent {
   return /"hook_event_name"\s*:\s*"PostToolUse"/.test(raw) ? 'PostToolUse' : 'PreToolUse';
 }
 
@@ -54,4 +55,23 @@ export function prepare(raw: string): Prepared {
   if (!parsed.ok) return { done: { ...refusal(parsed.event, COULDNT_READ), note: `The request could not be read: ${parsed.why}` } };
   if (parsed.event === null || parsed.input.tool_name === 'SubagentHandback') return { done: SILENT };
   return { input: parsed.input, event: parsed.event };
+}
+
+/** The input fields that name a file or folder. `path` is Glob's and Grep's. */
+const PATH_FIELDS = ['file_path', 'notebook_path', 'path'] as const;
+
+/** What a path field holds: `null` counts as not there, like leaving the field out. */
+const fieldOf = (input: HookInput, field: (typeof PATH_FIELDS)[number]): unknown => input.tool_input?.[field] ?? undefined;
+
+/** The values of the path fields that are text and not empty, as written. */
+export function targetsOf(input: HookInput): string[] {
+  return PATH_FIELDS.map((field) => fieldOf(input, field)).filter((v): v is string => typeof v === 'string' && v !== '');
+}
+
+/** Is a path field there but not text (a number, a list)? The tool call is then not one the guard can read. */
+export function hasUnreadablePath(input: HookInput): boolean {
+  return PATH_FIELDS.some((field) => {
+    const v = fieldOf(input, field);
+    return v !== undefined && typeof v !== 'string';
+  });
 }

@@ -11,7 +11,7 @@ import { tempDir } from '../helpers/project.ts';
 
 const IMPORT = "import { parentPort } from 'node:worker_threads';\n";
 const STUBS = {
-  answers: `${IMPORT}parentPort.postMessage({ kind: 'answer', out: { stdout: 'hello', exitCode: 0 } });`,
+  answers: `${IMPORT}parentPort.postMessage({ kind: 'answer', out: { stdout: '', exitCode: 0 } });`,
   spinsQuietly: 'for (;;) { /* never gives the thread back */ }',
   spinsAfterSayingWhere: `${IMPORT}parentPort.postMessage({ kind: 'root', root: 'some-project' });\nfor (;;) { /* never gives the thread back */ }`,
   throws: "throw new Error('stub exploded');",
@@ -32,8 +32,8 @@ const denial = (reason: string): string =>
   JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 
 describe('supervise', () => {
-  test('prints what the worker answers', async () => {
-    expect(await run(stub('answers'))).toEqual({ stdout: 'hello', exitCode: 0 });
+  test('prints what the worker answers (here: nothing to say)', async () => {
+    expect(await run(stub('answers'))).toEqual({ stdout: '', exitCode: 0 });
   });
 
   test('a worker that spins forever is cut off at the time limit with the refusal, not waited for', async () => {

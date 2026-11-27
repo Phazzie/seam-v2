@@ -1,9 +1,11 @@
 // Running the guard's decision in a worker thread, so a decision that never gives the thread back (a
 // huge parse, a long hash, a loop) is still cut off. The main thread does none of the work and owns all
-// the output: it starts the clock, hands the request to the worker, and prints whatever comes back. If
-// the worker has not answered in time, or fails, or stops without an answer, the main thread prints the
+// the output: it starts the clock, hands the request to the worker, and prints what comes back, but only if
+// it is something the hook may print. If the worker has not answered in time, or fails, or stops without
+// an answer, or answers with something that is not a refusal or silence, the main thread prints the
 // refusal itself (live checks c and d: a hook that crashes, is killed or times out lets the call go ahead,
-// so the hook must answer first). The worker is stopped; the hook then exits.
+// and so does one that prints nothing readable or exits non-zero, so the hook must answer first). The
+// worker is stopped; the hook then exits.
 import { Worker } from 'node:worker_threads';
 import { readGuardEnv } from '../config/env.ts';
 import { RECORD_TIMEOUT_MS } from '../config/limits.ts';
@@ -36,6 +38,39 @@ export interface Supervision {
   recordMs?: number;
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+/**
+ * Why an answer from the worker may not be printed, or null if it may. It may be printed only if it is
+ * exactly what the guard says: no output at all, or the deny (before a tool) or block (after a tool) with
+ * a reason, in the shape for this event, and exit code 0. Anything else (no output where there should be
+ * an object, text that is not JSON, exit code 1, the wrong shape) would reach Claude Code as "no decision",
+ * which lets the call through.
+ */
+function whyNotAnAnswer(out: unknown, event: HookEvent): string | null {
+  if (!isObject(out)) return 'it was not an object';
+  const { stdout, exitCode, note } = out;
+  if (typeof stdout !== 'string') return 'its output was not text';
+  if (exitCode !== 0) return `its exit code was ${String(exitCode)}, not 0`;
+  if (note !== undefined && typeof note !== 'string') return 'its note was not text';
+  if (stdout === '') return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(stdout);
+  } catch (err) {
+    return `its output was not JSON (${describeError(err)})`;
+  }
+  const reason = event === 'PostToolUse' ? (isObject(body) ? body.reason : undefined) : readReason(body);
+  if (typeof reason !== 'string' || reason === '') return 'it had no reason';
+  return refusal(event, reason).stdout === stdout ? null : `it was not the ${event === 'PostToolUse' ? 'block' : 'deny'} the hook prints for ${event}`;
+}
+
+/** The reason in a PreToolUse deny, if the body has that shape. */
+function readReason(body: unknown): unknown {
+  const specific = isObject(body) ? body.hookSpecificOutput : undefined;
+  return isObject(specific) ? specific.permissionDecisionReason : undefined;
+}
+
 /** Count a refusal in a short-lived second worker, so that the main thread never touches the files. Gives '' or why not. */
 function recordInWorker(url: URL, job: WorkerJob, ms: number): Promise<string> {
   return new Promise((resolve) => {
@@ -53,7 +88,7 @@ function recordInWorker(url: URL, job: WorkerJob, ms: number): Promise<string> {
     };
     const timer = setTimeout(() => done('this block could not be recorded: it took too long'), ms);
     worker.on('message', (m: WorkerMessage) => {
-      if (m.kind === 'recorded') done(m.failure);
+      if (isObject(m) && m.kind === 'recorded') done(m.failure);
     });
     worker.on('error', (err) => done(`this block could not be recorded: ${describeError(err)}`));
     worker.on('exit', () => done('this block could not be recorded: its worker stopped'));
@@ -62,8 +97,9 @@ function recordInWorker(url: URL, job: WorkerJob, ms: number): Promise<string> {
 
 /**
  * Decide the request in a worker and give back what the hook should print. Never rejects: the worker
- * running out of time, throwing, or stopping without an answer is a refusal (denied before a tool,
- * blocked after one), counted in the project if the worker had got far enough to say which it was.
+ * running out of time, throwing, stopping without an answer, or answering with something the hook may not
+ * print is a refusal (denied before a tool, blocked after one), counted in the project if the worker had
+ * got far enough to say which it was.
  */
 export function supervise(s: Supervision): Promise<HookOutput> {
   return new Promise((resolve) => {
@@ -97,10 +133,16 @@ export function supervise(s: Supervision): Promise<HookOutput> {
         resolve(refusal(s.event, failure === '' ? reason : `${reason} (${failure})`)),
       );
     }
+    function answered(out: unknown): void {
+      const why = whyNotAnAnswer(out, s.event);
+      if (why !== null) fail(internalError(`the guard worker gave an answer that is not one the hook can print (${why})`));
+      else if (settle()) resolve(out as HookOutput);
+    }
 
-    worker.on('message', (m: WorkerMessage) => {
-      if (m.kind === 'root') root = m.root;
-      else if (m.kind === 'answer' && settle()) resolve(m.out);
+    worker.on('message', (m: unknown) => {
+      if (isObject(m) && m.kind === 'root' && typeof m.root === 'string') root = m.root;
+      else if (isObject(m) && m.kind === 'answer') answered(m.out);
+      else fail(internalError('the guard worker sent a message the hook does not understand'));
     });
     worker.on('error', (err) => fail(internalError(err)));
     worker.on('messageerror', (err) => fail(internalError(err)));
