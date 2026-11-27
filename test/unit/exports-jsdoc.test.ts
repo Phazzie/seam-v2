@@ -38,6 +38,8 @@ describe('type tags in .js and .jsx files are part of the signature', () => {
   test('a class method\'s tags, and a constructor parameter\'s, are part of the class', () => {
     const cls = (type: string): string => `export class Box {\n  /**\n   * @param {${type}} a\n   */\n  open(a) { return a; }\n}`;
     expect(hashes('f.js', cls('number'))).not.toEqual(hashes('f.js', cls('string')));
+    const made = (type: string): string => `export class Box {\n  /**\n   * @param {${type}} a\n   */\n  constructor(a) { this.a = a; }\n}`;
+    expect(hashes('f.js', made('number'))).not.toEqual(hashes('f.js', made('string')));
   });
 
   test('the export default and the exports.x forms carry them too', () => {
