@@ -1,42 +1,15 @@
-import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { parseState } from '../../src/formats/state.ts';
 import type { SeamState } from '../../src/formats/state.ts';
-import { readState, recordBlock, rootKey, withLock, writeState } from '../../src/lib/store.ts';
+import { readState, recordBlock, rootKey, updateState, withLock, writeState } from '../../src/lib/store.ts';
+import { fresh, lockPath, parallel, setup } from '../helpers/store-procs.ts';
 import { put, tempDir } from '../helpers/project.ts';
 
-const run = promisify(execFile);
-const WORKER = resolve(import.meta.dirname, '../helpers/store-worker.ts');
 const WIN = process.platform === 'win32';
+const mirrorOf = (root: string, data: string): string => join(data, 'mirror', rootKey(root), 'state.json');
 
-/** A seam project folder and a data folder, both empty except for `.seam/`. */
-function setup(): { root: string; data: string } {
-  const root = tempDir();
-  mkdirSync(join(root, '.seam'));
-  return { root, data: tempDir() };
-}
-
-const fresh = (changes: Record<string, unknown> = {}): SeamState =>
-  parseState({
-    version: 1, phase: 'build', turn: { agentId: null, file: null, startedAt: null },
-    strikes: {}, parked: [], approvals: [], blocks: 0, halted: null, ...changes,
-  });
-
-/** Start `count` real node processes that all begin at the same moment, and wait for all of them. */
-async function parallel(mode: string, root: string, data: string, count: number, times = 1): Promise<void> {
-  const goAt = Date.now() + 3000; // time for every process to boot before the start signal
-  await Promise.all(
-    Array.from({ length: count }, () => run(process.execPath, [WORKER, mode, root, data, String(goAt), String(times)])),
-  );
-}
-
-const lockPath = (root: string): string => join(root, '.seam', '.lock');
-const ago = (ms: number): Date => new Date(Date.now() - ms);
-
-describe('withLock', () => {
+describe('withLock (more in lock.test.ts)', () => {
   test('returns what the function returns and leaves no lock behind', () => {
     const { root } = setup();
     expect(withLock(root, () => 42)).toBe(42);
@@ -50,74 +23,6 @@ describe('withLock', () => {
     expect(readFileSync(join(root, '.seam', 'counter.txt'), 'utf8')).toBe('20');
     expect(existsSync(lockPath(root))).toBe(false);
   });
-
-  test('8 processes racing to break the same stale lock still go in one at a time', async () => {
-    const { root, data } = setup();
-    put(root, '.seam/counter.txt', '0');
-    writeFileSync(lockPath(root), 'left behind by a crash');
-    utimesSync(lockPath(root), ago(60_000), ago(60_000));
-    await parallel('incr', root, data, 8, 3);
-    expect(readFileSync(join(root, '.seam', 'counter.txt'), 'utf8')).toBe('24');
-    expect(existsSync(lockPath(root))).toBe(false);
-  });
-
-  test('a clearing guard left by a crash is cleared along with the old lock', () => {
-    const { root } = setup();
-    for (const name of ['.lock', '.lock.break']) {
-      writeFileSync(join(root, '.seam', name), 'left behind by a crash');
-      utimesSync(join(root, '.seam', name), ago(60_000), ago(60_000));
-    }
-    expect(withLock(root, () => 'ran')).toBe('ran');
-    expect(readdirSync(join(root, '.seam'))).toEqual([]);
-  });
-
-  test('while another process is clearing the old lock (a fresh guard), this one waits and gives up rather than barge in', () => {
-    const { root } = setup();
-    writeFileSync(lockPath(root), 'left behind by a crash');
-    utimesSync(lockPath(root), ago(60_000), ago(60_000));
-    writeFileSync(`${lockPath(root)}.break`, 'someone else, right now');
-    let ran = false;
-    expect(() => withLock(root, () => { ran = true; }, { waitMs: 200, staleMs: 30_000 })).toThrow(/another seam/i);
-    expect(ran).toBe(false);
-  });
-
-  test('lets go of the lock when the function throws, and throws the same error', () => {
-    const { root } = setup();
-    const boom = new Error('boom');
-    expect(() => withLock(root, () => { throw boom; })).toThrow(boom);
-    expect(existsSync(lockPath(root))).toBe(false);
-    expect(withLock(root, () => 'again')).toBe('again');
-  });
-
-  test('a lock left by a crash more than 30 s ago is cleared', () => {
-    const { root } = setup();
-    writeFileSync(lockPath(root), '1234 long ago');
-    utimesSync(lockPath(root), ago(31_000), ago(31_000));
-    expect(withLock(root, () => 'ran')).toBe('ran');
-    expect(existsSync(lockPath(root))).toBe(false);
-    expect(readdirSync(join(root, '.seam'))).toEqual([]);
-  });
-
-  test('a fresh lock held by someone else is waited for, then refused with a plain reason; the function never runs', () => {
-    const { root } = setup();
-    writeFileSync(lockPath(root), '1234 just now');
-    let ran = false;
-    const started = Date.now();
-    expect(() => withLock(root, () => { ran = true; }, { waitMs: 300, staleMs: 30_000 })).toThrow(/another seam .*\.seam[\\/]\.lock/i);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(280);
-    expect(ran).toBe(false);
-    expect(readFileSync(lockPath(root), 'utf8')).toBe('1234 just now');
-  });
-
-  test('a lock someone else took over (ours ran past the stale limit) is not removed on the way out', () => {
-    const { root } = setup();
-    withLock(root, () => writeFileSync(lockPath(root), 'taken over by another process'));
-    expect(readFileSync(lockPath(root), 'utf8')).toBe('taken over by another process');
-  });
-
-  test('a missing .seam folder is a plain error, not a raw ENOENT', () => {
-    expect(() => withLock(tempDir(), () => 1)).toThrow(/records folder is missing.*\.seam/i);
-  });
 });
 
 describe('writeState and readState', () => {
@@ -125,8 +30,7 @@ describe('writeState and readState', () => {
     const { root, data } = setup();
     writeState(root, data, fresh({ blocks: 3 }));
     const text = readFileSync(join(root, '.seam', 'state.json'), 'utf8');
-    const mirror = join(data, 'mirror', rootKey(root), 'state.json');
-    expect(readFileSync(mirror, 'utf8')).toBe(text);
+    expect(readFileSync(mirrorOf(root, data), 'utf8')).toBe(text);
     expect(text.endsWith('}\n')).toBe(true);
     expect(text).not.toContain('\r');
     expect(readState(root).blocks).toBe(3);
@@ -149,6 +53,13 @@ describe('writeState and readState', () => {
     expect(readState(root).blocks).toBe(1);
   });
 
+  test('a folder with no .seam is a plain error and no mirror is made for it', () => {
+    const root = tempDir();
+    const data = tempDir();
+    expect(() => writeState(root, data, fresh())).toThrow(/records folder is missing.*cannot be written/i);
+    expect(readdirSync(data)).toEqual([]);
+  });
+
   test('reading a project with no state.json is a plain error', () => {
     const { root } = setup();
     expect(() => readState(root)).toThrow(/state\.json.*missing/i);
@@ -165,6 +76,41 @@ describe('rootKey', () => {
   });
 });
 
+describe('updateState', () => {
+  test('reads, changes and writes under the lock, returns the new state, and the mirror matches', () => {
+    const { root, data } = setup();
+    writeState(root, data, fresh({ blocks: 4 }));
+    const next = updateState(root, data, (s) => ({ ...s, blocks: s.blocks + 1, halted: 'stop' }));
+    expect(next.blocks).toBe(5);
+    expect(readState(root)).toEqual(next);
+    expect(readFileSync(mirrorOf(root, data), 'utf8')).toBe(readFileSync(join(root, '.seam', 'state.json'), 'utf8'));
+    expect(existsSync(lockPath(root))).toBe(false);
+  });
+
+  test('when the change throws, nothing is written and the lock is let go', () => {
+    const { root, data } = setup();
+    writeState(root, data, fresh({ blocks: 4 }));
+    const boom = new Error('boom');
+    expect(() => updateState(root, data, () => { throw boom; })).toThrow(boom);
+    expect(readState(root).blocks).toBe(4);
+    expect(existsSync(lockPath(root))).toBe(false);
+  });
+
+  test('a new state that does not fit the format is refused', () => {
+    const { root, data } = setup();
+    writeState(root, data, fresh());
+    expect(() => updateState(root, data, (s) => ({ ...s, blocks: -1 }))).toThrow(/blocks/);
+    expect(readState(root).blocks).toBe(0);
+  });
+
+  test('10 parallel processes updating twice each: all 20 land', async () => {
+    const { root, data } = setup();
+    writeState(root, data, fresh());
+    await parallel('update', root, data, 10, 2);
+    expect(readState(root).blocks).toBe(20);
+  });
+});
+
 describe('recordBlock', () => {
   test('logs "Blocked: <who> <what>" and adds one to blocks, in the file and in the mirror', () => {
     const { root, data } = setup();
@@ -172,7 +118,7 @@ describe('recordBlock', () => {
     recordBlock(root, data, 'builder', 'tried to write src/total.ts');
     expect(readState(root).blocks).toBe(5);
     expect(readFileSync(join(root, '.seam', 'log.md'), 'utf8')).toMatch(/^\d\d:\d\d Blocked: builder tried to write src\/total\.ts\n$/);
-    expect(JSON.parse(readFileSync(join(data, 'mirror', rootKey(root), 'state.json'), 'utf8')).blocks).toBe(5);
+    expect(JSON.parse(readFileSync(mirrorOf(root, data), 'utf8')).blocks).toBe(5);
   });
 
   test('10 parallel processes blocking twice each: all 20 counted, all 20 logged', async () => {

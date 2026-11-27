@@ -31,7 +31,7 @@ export function retryBusy<T>(what: string, op: () => T): T {
     } catch (err) {
       if (!BUSY_CODES.has(errorCode(err))) throw err;
       if (attempt >= RETRY_TRIES) {
-        throw new Error(`Could not ${what}: it stayed busy for ${RETRY_TRIES * RETRY_PAUSE_MS} ms (${(err as Error).message}).`, { cause: err });
+        throw new Error(`Could not ${what}: it stayed busy for ${(RETRY_TRIES - 1) * RETRY_PAUSE_MS} ms (${(err as Error).message}).`, { cause: err });
       }
     }
     sleepMs(RETRY_PAUSE_MS);

@@ -53,7 +53,7 @@ describe('atomicWrite', () => {
     const { target, dir } = setup();
     vi.mocked(renameSync).mockClear();
     vi.mocked(renameSync).mockImplementation(failing('EPERM'));
-    expect(() => atomicWrite(target, 'new\n')).toThrow(/could not replace .*state\.json.*EPERM/is);
+    expect(() => atomicWrite(target, 'new\n')).toThrow(new RegExp(`could not replace .*state\\.json: it stayed busy for ${(RETRY_TRIES - 1) * RETRY_PAUSE_MS} ms \\(EPERM`, 'is'));
     expect(renameSync).toHaveBeenCalledTimes(RETRY_TRIES);
     expect(readFileSync(target, 'utf8')).toBe('old\n');
     expect(readdirSync(dir)).toEqual(['state.json']);

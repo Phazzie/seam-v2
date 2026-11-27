@@ -33,7 +33,7 @@ describe('logLine', () => {
     expect(lines[0]).toMatch(/^\d\d:\d\d Blocked: main ran rm -rf x and more$/);
   });
 
-  test('a missing .seam folder is an error, not a silent skip', () => {
-    expect(() => logLine(tempDir(), 'x')).toThrow();
+  test('a missing .seam folder is a plain error, not a silent skip', () => {
+    expect(() => logLine(tempDir(), 'x')).toThrow(/records folder is missing.*nothing can be logged/i);
   });
 });
