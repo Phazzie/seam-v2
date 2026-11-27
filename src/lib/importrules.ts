@@ -12,16 +12,17 @@ export function packageName(spec: string): string {
   return spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
 }
 
-/** The planned files, and the paths named in this file's own plan entry, spelled from the repo root and from the app folder, without extension (a folder stands for its index file). */
+/** A path the plan lists, from the repo root. The plan's paths are from the app folder, so this is the one place they can be: with `seam-app` as the app folder, `src/helper.ts` is `seam-app/src/helper.ts` and never a `src/helper.ts` at the repo root. */
+const fromRepoRoot = (plan: Plan, path: string): string => posix.join(plan.appRoot.replace(/\\/g, '/'), path);
+
+/** The planned files, and the paths named in this file's own plan entry, spelled from the repo root, without extension (a folder stands for its index file). */
 function knownFiles(plan: Plan, named: readonly string[]): Set<string> {
   const found = new Set<string>();
   const paths = [...plan.seams.flatMap((s) => s.files.map((f) => f.path)), ...named];
   for (const path of paths) {
-    for (const spelled of [posix.normalize(path), posix.join(plan.appRoot.replace(/\\/g, '/'), path)]) {
-      const bare = withoutExtension(posix.normalize(spelled));
-      found.add(bare);
-      if (posix.basename(bare) === 'index') found.add(posix.dirname(bare));
-    }
+    const bare = withoutExtension(fromRepoRoot(plan, path));
+    found.add(bare);
+    if (posix.basename(bare) === 'index') found.add(posix.dirname(bare));
   }
   return found;
 }
@@ -37,7 +38,7 @@ const RELATIVE = /^\.\.?(?:\/|$)/;
  */
 export function importAllowed(spec: string, path: string, plan: Plan): boolean {
   if (spec.includes('\\')) return false;
-  const own = plan.seams.flatMap((s) => s.files).find((f) => posix.normalize(f.path) === path || posix.join(plan.appRoot, f.path) === path);
+  const own = plan.seams.flatMap((s) => s.files).find((f) => fromRepoRoot(plan, f.path) === path);
   const named = own?.imports ?? [];
   if (RELATIVE.test(spec)) return knownFiles(plan, named).has(withoutExtension(posix.join(posix.dirname(path), spec)));
   if (spec.split('/').some((part) => part === '' || part === '.' || part === '..' || part === 'node_modules' || part.includes('%'))) return false;
