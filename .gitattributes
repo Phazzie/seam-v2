@@ -1,0 +1,4 @@
+# Shell scripts must keep LF line endings, or bash fails on Windows checkouts.
+*.sh text eol=lf
+# The committed bundles run straight from the plugin folder; keep them byte-identical.
+dist/** text eol=lf

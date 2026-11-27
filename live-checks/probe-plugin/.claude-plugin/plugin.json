@@ -1,0 +1,5 @@
+{
+  "name": "seam-probe",
+  "version": "0.0.1",
+  "description": "Throwaway probe plugin: logs what Claude Code sends to hooks, so seam-v2 can rely on facts instead of guesses."
+}
