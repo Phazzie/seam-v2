@@ -24,7 +24,7 @@ const deciders = [decideWrite, decideCommand, decideRead];
 beforeEach(() => {
   vi.mocked(decideWrite).mockReset().mockResolvedValue(ALLOW);
   for (const fn of [decideCommand, decideRead]) vi.mocked(fn).mockReset().mockReturnValue(ALLOW);
-  vi.mocked(checkTamper).mockReset().mockReturnValue({ problems: [] });
+  vi.mocked(checkTamper).mockReset().mockResolvedValue({ problems: [] });
 });
 
 const decisionsAsked = (): number => deciders.reduce((n, fn) => n + vi.mocked(fn).mock.calls.length, 0);
@@ -140,7 +140,7 @@ describe('After a tool ran: the tamper check', () => {
 
   test('problems come back as one block, joined, counted, and logged', async () => {
     const app = await makeApp({ phase: 'build' });
-    vi.mocked(checkTamper).mockReturnValue({ problems: ['plan/plan.json was changed and has been put back', 'lib/stash.ts was moved away'] });
+    vi.mocked(checkTamper).mockResolvedValue({ problems: ['plan/plan.json was changed and has been put back', 'lib/stash.ts was moved away'] });
     const out = await call(app, post('Bash', { command: 'ls' }));
     expect(printed(out)).toEqual({ decision: 'block', reason: 'plan/plan.json was changed and has been put back; lib/stash.ts was moved away' });
     expect(blocksOf(app)).toBe(1);

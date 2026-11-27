@@ -113,7 +113,7 @@ export function decideBuilderRead(input: HookInput, ctx: Ctx, look: Look): Decis
   const typesOnly = look.filter !== undefined && TYPE_FILE.test(look.filter.split(/[\\/]/).at(-1) ?? '');
   for (const place of places) {
     const verdict = verdictOf(allowed, place, look.searching);
-    if (verdict === 'no') return deny(look.roots.includes(place) ? why.notReadable(rel(repo, place) ?? place) : why.patternEscapes(look.filter ?? ''));
+    if (verdict === 'no') return deny(look.roots.includes(place) ? why.notReadable((rel(repo, place) ?? place) || '.') : why.patternEscapes(look.filter ?? ''));
     if (verdict === 'types' && !typesOnly) return deny(why.TYPES_ONLY);
   }
   return look.unfollowable ? deny(why.patternEscapes(look.filter ?? '')) : ALLOW;

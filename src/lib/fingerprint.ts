@@ -29,6 +29,8 @@ const whole = (abs: string): FileLock => ({ kind: 'whole', hash: hashFile(readFi
  * Fingerprint the plan's files and write `<root>/.seam/lock.json`. Every planned file that isn't a
  * config file must be on disk (a missing one throws, naming it). The plan file, the contracts, tests
  * and fixtures folders and the config files get a whole-file hash; planned code files get named items.
+ * The tamper check compares files with its own record, not with the lock, so a script that writes the lock must
+ * then take a new snapshot (`snapshotProtected`, guard/tamper.ts), or the check puts the new lock.json back.
  */
 export function writeLock(root: string, plan: Plan): Lock {
   requireSeamDir(root, "the lock can't be written");

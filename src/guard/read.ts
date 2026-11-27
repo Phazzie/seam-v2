@@ -39,7 +39,7 @@ function decideDescriberRead(ctx: Ctx, look: Look): Decision {
   const root = resolveReal(ctx.root, '.');
   const folder = resolveReal(root, REVIEW);
   const outside = [...look.roots, ...look.reaches].find((place) => rel(folder, place) === null);
-  if (outside !== undefined) return deny(why.describerOnly(rel(root, outside) ?? outside));
+  if (outside !== undefined) return deny(why.describerOnly((rel(root, outside) ?? outside) || '.'));
   return look.unfollowable ? deny(why.describerOnly(look.filter ?? '')) : ALLOW;
 }
 

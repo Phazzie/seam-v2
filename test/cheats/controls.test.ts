@@ -1,12 +1,11 @@
 // Positive controls: legitimate actions the guard must NOT refuse. A guard that refuses everything
 // would pass every cheat test, so these keep the cheat suite honest.
 //
-// The builder control needs the protected-file snapshot (`makeApp` with a lock takes one), which is
-// Task 12's: until then it fails with "not implemented". The others run against the real write decision.
-import { beforeAll, describe, test } from 'vitest';
+// The builder controls need the protected-file snapshot (`makeApp` with a lock takes one).
+import { beforeAll, describe, expect, test } from 'vitest';
 import { asBuilder, asMain, makeApp } from '../helpers/app.ts';
 import type { App } from '../helpers/app.ts';
-import { expectAllowed, run, write } from '../helpers/calls.ts';
+import { expectAllowed, post, run, write } from '../helpers/calls.ts';
 import { TOTAL, total } from '../helpers/code.ts';
 import type { Phase } from '../../src/types.ts';
 
@@ -14,6 +13,18 @@ describe('controls: the guard lets legitimate work through', () => {
   test('the builder whose turn it is can Write the correctly filled total (header, steps, signature intact)', async () => {
     const app = await makeApp({ phase: 'build', lock: true, turn: { file: TOTAL, agentId: 'builder-1' } });
     expectAllowed(await app.hook(write(app, TOTAL, total(), asBuilder('builder-1'))));
+  });
+
+  // The tamper check after a legitimate write must not take the work back: a guard that undid every write
+  // would pass the cheats too.
+  test('and the filled total is still there after the write has happened, and after the next command', async () => {
+    const app = await makeApp({ phase: 'build', lock: true, turn: { file: TOTAL, agentId: 'builder-1' } });
+    const input = write(app, TOTAL, total(), asBuilder('builder-1'));
+    expectAllowed(await app.hook(input));
+    app.writeRaw(TOTAL, total());
+    expectAllowed(await app.hook({ ...input, hook_event_name: 'PostToolUse', tool_response: {} }));
+    expectAllowed(await app.hook(post('Bash', { command: 'git status' })));
+    expect(app.read(TOTAL)).toBe(total());
   });
 
   test('the main agent can Write a schema-only contract in plan2 (cheat 15 forbids code in one, not schemas)', async () => {

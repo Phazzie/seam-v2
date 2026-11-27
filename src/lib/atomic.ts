@@ -38,8 +38,8 @@ export function retryBusy<T>(what: string, op: () => T): T {
   }
 }
 
-/** Replace `file` with `text` in one step. A reader sees the old text or the new text, never a mix. */
-export function atomicWrite(file: string, text: string): void {
+/** Replace `file` with `text` (or bytes) in one step. A reader sees the old content or the new content, never a mix. */
+export function atomicWrite(file: string, text: string | Uint8Array): void {
   const temp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   try {
     writeFileSync(temp, text);
