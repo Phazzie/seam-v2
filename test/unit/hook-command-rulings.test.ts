@@ -88,3 +88,28 @@ describe('R61 and R62 in the hook', () => {
     expectDenied(await app.hook(pre('Write', { file_path: app.abs('.gitattributes'), content: '* filter=x\n' })), /config files are frozen/);
   });
 });
+
+describe('R64 in the hook: PowerShell 5.1 splits an unquoted one-dash word, and drops an empty word', () => {
+  test.each(['git log -pp.seam/state.json', 'git diff -pO.claude/settings.json', 'git log -U3.seam/state.json', 'git log -a=x/.seam/state.json', 'git diff -a:--output=x'])(
+    'PowerShell: %s', async (command) => {
+      const app = await makeApp({ phase: 'build' });
+      expectDenied(await app.hook(run('PowerShell', command)), /PowerShell splits this option at the dot; write it differently/);
+    },
+  );
+  test('PowerShell: an empty quoted word', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('PowerShell', "git log ''")), /an empty quoted word is not allowed/);
+    expectDenied(await app.hook(run('PowerShell', 'git log ""')), /an empty quoted word is not allowed/);
+  });
+  test('PowerShell: the plain commands still run', async () => {
+    const app = await makeApp({ phase: 'build' });
+    for (const command of ['git log --oneline -5', 'git diff HEAD~1 -- src/x.ts', 'npx vitest run test/unit/x.test.ts', 'git log -1']) {
+      expectAllowed(await app.hook(run('PowerShell', command)));
+    }
+  });
+  test('Bash: the file stuck to -O in a cluster is path-checked', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('Bash', 'git diff -pO.claude/settings.json')), /may not touch/);
+    expectAllowed(await app.hook(run('Bash', 'git diff -pU3')));
+  });
+});

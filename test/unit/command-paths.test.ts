@@ -39,7 +39,6 @@ describe('a protected place named by an allowed command is refused, whatever the
     ["the owner's Claude plugins by ~ and backslashes", () => '~\\.claude\\plugins\\x', /protected/],
     ['a file ref in git', () => 'HEAD:.seam/lock.json', /records/],
     ['an option value', () => '--output=.seam/x', /records/],
-    ['a PowerShell parameter value', () => '-Path:.seam/x', /records/],
   ];
   describe.each(TOOLS)('%s', (tool) => {
     test.each(PLACES)('git diff -- %s', (_what, path, reason) => {
@@ -47,6 +46,12 @@ describe('a protected place named by an allowed command is refused, whatever the
       expect(refusal).toMatch(TOUCH);
       expect(refusal).toMatch(reason);
     });
+  });
+
+  test('a PowerShell-style parameter value is a path (Bash; PowerShell 5.1 would split the word at its colon, R64)', () => {
+    expect(whyNot(s, 'git diff -- -Path:.seam/x')).toMatch(/records/);
+    expect(whyNot(s, 'git diff -- -Path:.seam/x', { tool: 'PowerShell' })).toMatch(/^PowerShell splits this option at the dot/);
+    expect(whyNot(s, "git diff -- '-Path:.seam/x'", { tool: 'PowerShell' })).toMatch(/records/);
   });
 
   test('with the quotes taken off (Bash: PowerShell 5.1 refuses a quote inside a word, R61)', () => {

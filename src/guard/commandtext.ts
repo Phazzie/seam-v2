@@ -82,10 +82,13 @@ export function wordValue(word: string): string | null {
   return /^-{1,2}[^=:\s]+[=:](.*)$/.exec(word)?.[1] ?? null;
 }
 
-/** The value stuck to a one-letter option (`-O.seam/x`, git's order file) when it looks like a path or a file name; null if there is none (R62). */
-export function attachedValue(word: string): string | null {
-  const value = /^-[A-Za-z](.+)$/.exec(word)?.[1];
-  return value !== undefined && /[./\\~]/.test(value) ? value : null;
+/**
+ * The values stuck to one-letter options in a word, that look like a path or a file name (R62, R64): after the first
+ * letter (`-O.seam/x`, git's order file) and after the first `O` in a cluster (`-pO.claude/x` is `-p -O .claude/x`).
+ */
+export function attachedValues(word: string): string[] {
+  const values = [/^-[A-Za-z](.+)$/.exec(word)?.[1], /^-[A-Za-z0-9]*?O(.+)$/.exec(word)?.[1]];
+  return values.filter((value): value is string => value !== undefined && /[./\\~]/.test(value));
 }
 
 /** `pathText`, with whether the path came after a ref. A ref cannot hold a colon, so the path starts after the first one. */

@@ -54,19 +54,29 @@ const QUOTE_AND_BACKSLASH = /\\['"]|['"]\\/;
  * or one quote at each end and none inside. It splits `'a'--output=x` into `a` and `--output=x`, where the guard sees one word.
  */
 const ONE_WORD_TO_POWERSHELL = /^(?:[^'"]*|'[^'"]*'|"[^'"]*")$/;
+/**
+ * An unquoted word that starts with one dash (R64): Windows PowerShell 5.1 reads it as a parameter name and ends it at the
+ * first `.` or `:`, so `-pp.seam/x` reaches the program as `-pp` and `.seam/x`, and `-a:--output=x` as `-a:` and `--output=x`.
+ * A word that starts with two dashes, or is quoted, is passed whole.
+ */
+const SPLIT_BY_POWERSHELL = /^-(?!-)[^'"]*[.:]/;
 
 /**
  * Windows PowerShell 5.1 (the PowerShell tool) hands a program its words with the old quoting (R61): a word that holds a
  * space is wrapped in double quotes without escaping what is inside, so a `"` or a backslash at its end splits it into
  * more words than the guard saw, and so does a quote closed in front of more text; `--%` splits what follows again and
  * expands `%VAR%`; `@name` splats. None of it is needed for plain commands, so a word with a space or a `"`, a quote that
- * is not around a whole word, a backslash at the end of a word or by a quote, any `%` and any `@` is refused.
+ * is not around a whole word, a backslash at the end of a word or by a quote, any `%` and any `@` is refused; so is an
+ * unquoted one-dash word with a `.` or `:` in it (PowerShell splits it, R64), and an empty quoted word (PowerShell drops it).
  */
 function powershellProblem(command: string, words: string[]): string | null {
   if (command.includes(',')) return why.POWERSHELL_COMMA;
   if (/[%@]/.test(command)) return why.POWERSHELL_EXPAND;
   if (QUOTE_AND_BACKSLASH.test(command) || words.some((word) => /[\s"]/.test(word) || word.endsWith('\\'))) return why.POWERSHELL_QUOTING;
-  if (command.split(/[ \t]+/).some((piece) => !ONE_WORD_TO_POWERSHELL.test(piece))) return why.POWERSHELL_QUOTING;
+  const pieces = command.split(/[ \t]+/);
+  if (pieces.some((piece) => !ONE_WORD_TO_POWERSHELL.test(piece))) return why.POWERSHELL_QUOTING;
+  if (pieces.some((piece) => SPLIT_BY_POWERSHELL.test(piece))) return why.POWERSHELL_SPLITS;
+  if (words.includes('')) return why.POWERSHELL_EMPTY; // '' and "" are dropped
   return null;
 }
 

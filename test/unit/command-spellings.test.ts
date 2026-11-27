@@ -50,7 +50,9 @@ describe('R62: the tilde forms other than ~ and ~/', () => {
 
 describe('R62: -L, which names a line range and a file in one word', () => {
   test.each(['git log -L:main:src/a.ts', 'git log -L5:src/a.ts', 'git log -nL5:src/a.ts', 'git log -pL:f:x', 'git log -L', 'git diff -L1'])('%s', (command) => {
-    for (const tool of TOOLS) expect(whyNot(s, command, { tool }), tool).toMatch(LINE_RANGE);
+    expect(whyNot(s, command)).toMatch(LINE_RANGE);
+    // PowerShell 5.1 splits the unquoted word at its colon (R64), which it is refused for first when it has one
+    expect(whyNot(s, command, { tool: 'PowerShell' })).toMatch(/names a line range|^PowerShell splits this option at the dot/);
   });
   test('with a range, in Bash (a comma is a list in PowerShell)', () => {
     expect(whyNot(s, 'git log -L1,5:.seam/state.json')).toMatch(/records|names a line range/); // the file in it is named, and protected
@@ -69,11 +71,26 @@ describe('R62: the value stuck to a one-letter option is a path too', () => {
     ['-O.seam/state.json', /records/], ['-OCLAUDE.md', /protected/], ['-Osrc/../.seam/lock.json', /records/], ['-O~/.claude/settings.json', /protected/],
     ['-OCLAUDE.local.md', /protected/], ['-O.claude/x', /protected/], ['-Odocs/AGENTS.md', /protected/],
   ] as [string, RegExp][])('git diff %s', (word, reason) => {
-    for (const tool of TOOLS) {
-      const refusal = whyNot(s, `git diff ${word}`, { tool });
-      expect(refusal, tool).toMatch(/^a command may not touch /);
-      expect(refusal, tool).toMatch(reason);
-    }
+    const refusal = whyNot(s, `git diff ${word}`);
+    expect(refusal).toMatch(/^a command may not touch /);
+    expect(refusal).toMatch(reason);
+    // PowerShell 5.1 splits the unquoted word at its dot and the guard refuses it for that (R64); quoted, it is whole and path-checked
+    expect(whyNot(s, `git diff ${word}`, { tool: 'PowerShell' })).toMatch(/^PowerShell splits this option at the dot/);
+    expect(whyNot(s, `git diff '${word}'`, { tool: 'PowerShell' })).toMatch(reason);
+  });
+  test.each([
+    ['-pO.claude/settings.json', /protected/], ['-pOCLAUDE.md', /protected/], ['-wO.seam/state.json', /records/], ['-pO~/.claude/settings.json', /protected/],
+    ['-pOsrc/../.seam/lock.json', /records/], ['-nbO.claude/x', /protected/], ['-pO.seam/state.json', /records/],
+  ] as [string, RegExp][])('a cluster, in Bash: git diff %s is -p, then -O with its file (R64)', (word, reason) => {
+    const refusal = whyNot(s, `git diff ${word}`);
+    expect(refusal).toMatch(/^a command may not touch /);
+    expect(refusal).toMatch(reason);
+  });
+  test('and in a cluster the other letters are not files', () => {
+    expectRuns(s, 'git diff -pU3');
+    expectRuns(s, 'git diff -pw');
+    expectRuns(s, 'git log -pn5');
+    expectRuns(s, 'git diff -pOorder.txt');
   });
   test('the file stuck on in git log and git show too, and by its absolute path', () => {
     expect(whyNot(s, 'git log -O.seam/state.json')).toMatch(/records/);

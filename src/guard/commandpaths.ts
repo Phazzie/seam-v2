@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { classify, resolveReal } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
 import type { Ctx } from '../types.ts';
-import { attachedValue, pathParts, readingsOf, wordValue } from './commandtext.ts';
+import { attachedValues, pathParts, readingsOf, wordValue } from './commandtext.ts';
 import { protectedPlace } from './commandwhy.ts';
 
 /** Places a command may not name, not even as an argument of an allowed command. */
@@ -34,12 +34,13 @@ function basesOf(ref: boolean, text: string, cwd: string, ctx: Ctx): string[] {
 
 /**
  * The first word that names a path in a protected place, in any reading of it, as the refusal says it; null if none does.
- * The value stuck to a one-letter option counts as a path too (`-O.seam/x` is git reading an order file, R62).
+ * The value stuck to a one-letter option counts as a path too (`-O.seam/x` is git reading an order file, R62, and so is
+ * the one in a cluster, `-pO.claude/x`, R64).
  */
 export function offLimits(words: string[], cwd: string, ctx: Ctx): string | null {
   for (const word of words) {
-    for (const named of [word, attachedValue(word)]) {
-      const parts = named === null ? null : pathParts(named);
+    for (const named of [word, ...attachedValues(word)]) {
+      const parts = pathParts(named);
       if (parts === null) continue;
       for (const base of basesOf(parts.ref, parts.text, cwd, ctx)) {
         for (const reading of readingsOf(parts.text)) {

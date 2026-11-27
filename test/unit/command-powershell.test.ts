@@ -91,6 +91,58 @@ describe('R61: plain commands still run in the PowerShell tool', () => {
   });
 });
 
+const SPLITS = /^PowerShell splits this option at the dot; write it differently/;
+
+describe('R64: Windows PowerShell 5.1 splits an unquoted one-dash word at its first . or :', () => {
+  test.each([
+    'git log -pp.seam/state.json', 'git diff -pO.claude/settings.json', 'git log -U3.seam/state.json', 'git log -a=x/.seam/state.json',
+    // the colon does the same: `-a:--output=x` reaches git as `-a:` and `--output=x`
+    'git diff -a:--output=x', 'git diff -a:--ext-diff', 'git log -p:--output=x', 'git diff -a:--no-index', 'git diff -O:.seam/state.json', 'git diff -a::x',
+    // any one-dash word with a dot or a colon, wherever it is
+    'git diff -x.y', 'git diff -5.5', 'git log -n1.5', 'git diff -a.', 'git diff -a:', 'git diff -.x', 'git log -- -a.b', 'git diff HEAD -p.x', 'git log -ab.cd.ef',
+    'npx vitest run -a.b', 'seam init -x.y',
+  ])('%s', (command) => expect(whyNot(s, command, ps)).toMatch(SPLITS));
+
+  test('the reason is plain words and says what to do', () => {
+    expect(whyNot(s, 'git log -pp.seam/state.json', ps)).toMatch(/use a double-dash option, or quote the whole word/);
+  });
+
+  test('a quoted word is passed whole by PowerShell, so it is the word the guard sees', () => {
+    expectRuns(s, "git log '-n5'", ps);
+    expectRuns(s, 'git log "-n5"', ps);
+    expect(whyNot(s, "git diff '-O.seam/state.json'", ps)).toMatch(/records/); // whole, and still path-checked
+    expect(whyNot(s, 'git diff "-pO.claude/settings.json"', ps)).toMatch(/protected/);
+  });
+
+  test('a word that starts with two dashes, or that holds no dot or colon, is not split', () => {
+    for (const command of [
+      'git log --oneline -5', 'git log -1', 'git log -n5 -p', 'git diff -U3 -w', 'git log --since=2.weeks', 'git log --stat=100.5', 'git log --output-indicator-new=+',
+      'git diff HEAD~1 -- src/x.ts', 'git log -- src/a.b', 'git diff HEAD -- .gitignore', 'git log --author=me', 'git branch -vv', 'git show HEAD:src/pricing/total.ts',
+    ]) expectRuns(s, command, ps);
+    expectRuns(s, 'npx vitest run test/unit/x.test.ts', ps);
+    expectRuns(s, 'npm run typecheck', ps);
+  });
+
+  test('the same words in Bash are one word to git, as the guard sees them', () => {
+    expectRuns(s, 'git log -n1.5');
+    expectRuns(s, 'git diff -a:x');
+  });
+});
+
+describe('R64: an empty quoted word, which Windows PowerShell 5.1 drops', () => {
+  test.each(["git log ''", 'git log ""', "git log -n '' 5", "git diff '' x", 'git diff "" -- src/a.ts', "git log '' ''", "git diff -- ''"])('%s', (command) => {
+    expect(whyNot(s, command, ps)).toMatch(/^an empty quoted word is not allowed in a PowerShell command/);
+  });
+  test('a word with something in it is not empty', () => {
+    expectRuns(s, "git log 'HEAD'", ps);
+    expectRuns(s, 'git log "HEAD" -n "5"', ps);
+  });
+  test('Bash passes an empty word on, so it is not refused there', () => {
+    expectRuns(s, "git log ''");
+    expectRuns(s, 'git diff "" -- src/a.ts');
+  });
+});
+
 describe('R61: the Bash tool is not changed', () => {
   test.each([
     'git log --format=%h', 'git log --grep="a b"', "git log --grep='a b' --format='%h %s'", 'git diff @HOME', 'git log --author=me@x.com', 'git log -1 --format="%h %s"',
