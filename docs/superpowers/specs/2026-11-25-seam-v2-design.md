@@ -364,16 +364,18 @@ Each stage ends with its cheat tests green and one run on the practice app.
 - **Cutover is a pull request**, never a direct change to `main`. It moves `seam-app/` to the
   root and removes the old app. The owner merges it. The plugin never deploys.
 
-## 14. Open questions for the owner
+## 14. Owner's answers (2026-11-25)
 
-1. **How do you approve?** (a) Recommended: in your own terminal window, outside Claude Code,
-   with `seam approve` (installed once so it works outside Claude Code). It shows the summary
-   and you type back a code; the AI can't do this. (b) In the chat: easier, but Claude Code's
-   docs say chat-prompt hooks also fire for messages that don't come from a person, so the AI
-   could in principle fake one. Related: do you ever run these builds from cloud, web or phone
-   sessions, where there's no local terminal?
-2. **Do screens go through the build loop?** (a) Recommended: yes. Components and routes are
-   planned files with steps and promises. A builder fills them and Vitest checks them by
-   simulating the page (Testing Library). How screens look is checked by a separate design pass
-   after build, which can change styling but not logic. (b) No: screens stay free-form, built
-   the normal way after the seams are done. The guard then only watches non-UI files.
+1. **Where it runs:** the Claude Code desktop app and the terminal CLI, both on the owner's
+   Windows machine. Cloud, web and phone sessions are not supported.
+   **How approvals work (follows from that, as described in 6.4):** `seam approve` runs in a
+   separate window with a real keyboard. Setup installs `seam` so it works outside Claude Code,
+   and puts a "Seam Approve" shortcut on the desktop that opens that window, so approving
+   from the desktop app is a double-click.
+2. **Screens go through the build loop.** Components and routes are planned files with steps
+   and promises. Builders fill them, and Vitest with Testing Library checks them by simulating
+   the page. The skeleton script, body fingerprints and must-fail-first rule cover TSX
+   components: a skeleton component throws the SKELETON error, and its steps sit as markers
+   in the function body. After build, a separate design pass may change styling (class
+   names, CSS, layout markup) but not logic. Its changes are checked to touch only styling,
+   and the tests are re-run.
