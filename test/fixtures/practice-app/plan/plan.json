@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "appRoot": ".",
+  "seams": [
+    {
+      "id": "pricing",
+      "name": "Pricing",
+      "services": [],
+      "files": [
+        {
+          "path": "src/pricing/total.ts",
+          "kind": "code",
+          "purpose": "Add two prices together into one total.",
+          "inputs": "a: number (first price), b: number (second price)",
+          "outputs": "the combined total as a number",
+          "imports": [],
+          "exports": [
+            { "name": "total", "signature": "total(a: number, b: number): number" }
+          ],
+          "steps": [
+            "Take the first price given",
+            "Add the second price to it",
+            "Hand back the combined total"
+          ],
+          "promises": [
+            { "id": "P-pricing-1", "text": "total(2, 3) returns 5" },
+            { "id": "P-pricing-2", "text": "total(0, 0) returns 0" }
+          ],
+          "estLines": 25
+        }
+      ]
+    },
+    {
+      "id": "greeting",
+      "name": "Greeting",
+      "services": [],
+      "files": [
+        {
+          "path": "src/greeting/Greeting.tsx",
+          "kind": "screen",
+          "purpose": "Show a hello message for the person's name.",
+          "inputs": "props: { name: string }",
+          "outputs": "a heading that reads 'Hello, <name>!'",
+          "imports": [],
+          "exports": [
+            { "name": "Greeting", "signature": "Greeting(props: { name: string }): JSX.Element" }
+          ],
+          "steps": [
+            "Read the name from the props",
+            "Build the greeting text from the name",
+            "Return a heading that shows the greeting text"
+          ],
+          "promises": [
+            { "id": "P-greeting-1", "text": "Greeting with name 'Ada' shows a heading with the exact text 'Hello, Ada!'" }
+          ],
+          "estLines": 30
+        }
+      ]
+    }
+  ],
+  "buildOrder": ["src/pricing/total.ts", "src/greeting/Greeting.tsx"],
+  "config": ["package.json", "tsconfig.json", "vitest.config.ts"],
+  "generated": [],
+  "packages": ["react"],
+  "legacyRoot": null
+}

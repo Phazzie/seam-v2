@@ -1,0 +1,22 @@
+{
+  "name": "seam-v2",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Claude Code plugin for seam-driven development with guard rails an AI can't quietly game.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.4",
+    "esbuild": "^0.28.2",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.2",
+    "zod": "^4.6.7"
+  }
+}
