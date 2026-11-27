@@ -27,6 +27,39 @@ The plugin also has to work on **existing apps**. The owner usually has an AI bu
 experimental version first; seam-v2 is how that version is rebuilt properly, beside the old
 one.
 
+### 1.1 Make the right way the easy way (the main lever)
+
+A coding AI doesn't scheme. It cuts corners when the proper path is harder, unclear, or in
+its way. In the old kit's failure, the code was already written, so going back to skeletons
+felt like wasted work, and trimming then restoring was the shortest route to "check passes".
+The guard is the seatbelt; these are what keep it from being needed:
+
+1. **Nothing else to do.** A builder starts with one file whose steps are already written as
+   markers. Its whole job is "write the code under each step." No plan to rewrite, no other
+   file in reach.
+2. **Scripts do the bookkeeping.** Skeletons, records, picking the next file and running tests
+   are all scripts. The AI never has to remember the process, so it can't skip a step it
+   forgot or found tedious.
+3. **Fast, clear feedback.** When a builder finishes, the tests run at once and say which
+   promise failed and what came out. Fixing the code is quicker than finding a way round.
+4. **Success is named as the promise.** Builder instructions say "make these sentences true,"
+   not "make the tests pass."
+5. **Rules come with reasons.** Every agent's instructions say why each rule exists.
+6. **Fresh starts.** One new builder per file try, so no long-session pressure builds up.
+7. **The honest exit is welcome.** Builder instructions say "if you're stuck, saying so, with
+   the step and what you tried, is a good result." Strike counting lives in the scripts; the
+   builder never sees it.
+8. **Blocks are a signal.** `seam report` shows how often the guard blocked, and what. Frequent
+   blocks mean the easy path is in the wrong place: fix the path, don't just add walls.
+
+### 1.2 How serious the guard is
+
+The guard aims at what coding AIs really do (trim code, edit tests, mark their own work done,
+write vague steps, "helpfully" approve for the owner), not at a hacker attacking the plugin.
+Heavier protections (signed approvals, a locked-down test process, guarding against faked
+keyboards) are listed in section 17 and are added only if the block log shows the AI testing
+the walls.
+
 ## 2. Goals, non-goals, anti-goals
 
 **Goals**
@@ -34,10 +67,11 @@ one.
 1. Each known cheat (section 9) is blocked or caught, and a cheat test proves it.
 2. Code gets into the app only through the build loop: a builder fills a frozen skeleton,
    the guard's tests pass, and the checker agrees.
-3. The human makes few, short decisions, signed with a passphrase in a separate window. The
-   AI cannot make them.
+3. The human makes few, short decisions, in a separate approval window. The AI cannot make
+   them.
 4. Works on a new app and on an existing app (rebuild beside it).
 5. Plain-English record of everything, so the owner can follow it without reading code.
+6. It can run unattended overnight once the plan is frozen (6.11).
 
 **Non-goals**
 
@@ -205,23 +239,17 @@ typed by a person (background helpers reporting back, scheduled tasks, other ses
 phrase typed in the chat cannot prove a human approved. Decided (section 14):
 
 - The human approves in **their own window**, outside Claude Code: `seam approve`, opened from
-  a desktop shortcut. The script shows the one-screen summary, then asks for the owner's
-  **approval passphrase**, typed with nothing shown on screen.
-- The passphrase is set once at setup and never stored. It unlocks a signing key, and each
-  approval is **signed** with what it approves (the fingerprints of the plan, tests and lock at
-  that moment). The matching public key goes into the app repo and into CI.
-- So a forged approval needs the passphrase. Faking a keyboard, driving the window, or
-  editing the records doesn't produce a valid signature. The guard also blocks the AI from
-  running `seam approve`, and the script refuses without an interactive terminal; those are
-  extra locks, not the main one.
-- The approval is written to the record and the data folder, and logged.
-
-A signature covers exactly what was shown, so an old approval can't be replayed against
-changed files.
+  a "Seam Approve" desktop shortcut. It shows a one-screen summary and a short fresh code; the
+  human types the code back.
+- The guard blocks the AI from running `seam approve`, and the script refuses unless it has
+  an interactive terminal (Claude's command tools never do). This stops the realistic case:
+  the AI approving on the owner's behalf because it assumes they'd say yes.
+- The approval records the fingerprints of exactly what was shown, so it can't be reused
+  after files change. It's written to the record and the data folder, and logged.
+- (Signed approvals with a passphrase are in section 17, held back unless needed.)
 
 The four approvals: (1) inventory + features, (2) freeze, (3) flips, (4) cutover. The human
-also decides when a file strikes out, and any plan change after freeze. Those decisions use the
-same signed approval.
+also decides on parked files (6.6) and any plan change after freeze, in the same window.
 
 ### 6.5 The build loop
 
@@ -253,29 +281,32 @@ AI start each builder, describer and checker with the normal agent tool, in a lo
 The workflow is the convenient path, not the only gate. If the main AI skips it, nothing is
 gained: only a builder can write code, and only a script can mark a file done.
 
-### 6.6 Strikes and "I'm stuck"
+### 6.6 Strikes, "I'm stuck" and parking
 
 - A builder gets a fixed number of test runs per try (Claude's call: 5). If it still fails,
   the guard lets it stop and records **strike 1**. The file is reset to its skeleton and a
   fresh builder starts, with a one-line note on what went wrong.
-- **Strike 2** goes to the human, with the plain log of both tries.
-- A builder's tamper (6.3) is a strike too. A tamper by the **main AI** stops the whole run
-  and goes straight to the human (it has no "file" to strike against).
 - A builder may instead say it is stuck, in a fixed form: the step number and what it tried.
-  The guard checks the form and resets the file (stuck counts as nothing done). Stuck counts
-  as a strike, so it isn't a free hand-off: the first time, a fresh builder gets the stuck
-  note; the second strike of any kind goes to the human. A vague "I'm stuck" is refused.
-- A builder that crashes or vanishes without finishing loses its turn after a time limit, and
-  that counts as a strike.
+  Its instructions say this is a good result (1.1). The scripts reset the file and record it
+  as strike 1 too, so the next fresh builder gets the stuck note. A vague "I'm stuck" is sent
+  back asking for the step and what was tried. The builder never sees strike counts.
+- A builder's tamper (6.3) is a strike. A builder that crashes or vanishes loses its turn
+  after a time limit, also a strike.
+- **Strike 2 parks the file.** It's reset to its skeleton, set aside with the plain log of
+  both tries, and the run **keeps going** with every file that doesn't depend on it. Files
+  that do depend on it are parked too, marked "waiting on" it. The owner decides on parked
+  files later (retry with a note, change the plan, or build it differently).
+- The run stops only when nothing buildable is left, or when the **main AI** tampers with a
+  protected file (that halts everything for the owner).
 
 ### 6.7 Plan changes after freeze
 
 If a builder or the main AI finds the plan is wrong (a contract can't work, a step is
-impossible), it asks to reopen a seam. The human approves with a signed approval. Phase is
+impossible), it asks to reopen a seam. The human approves in the approval window. Phase is
 tracked **per seam** as well as overall, so the reopened seam goes back to plan while the
 others stay in build. The main AI may edit only that seam's plan and tests; the change is
 written to `plan/DRIFT-LOG.md`; the seam goes through checker review and is re-frozen with
-another signed approval. Files that import from it go back to "needs re-test" (section 13).
+another approval. Files that import from it go back to "needs re-test" (section 13).
 Full details get a second design pass before stage 3 (section 16).
 
 ### 6.8 The plain-English log
@@ -286,6 +317,23 @@ tried to change tests/orders.test.ts after freeze." Agents can't write to it.
 `seam report` prints a one-screen status from it.
 
 ### 6.9 Existing apps: rebuild beside
+
+How the owner starts it:
+
+1. Install the plugin once.
+2. Open Claude Code in the app's repo and type `/seam-v2:start`.
+3. It asks new branch or new repo (below) and sets that up.
+4. The surveyor drafts the inventory; the owner corrects it. **Approval 1.**
+5. Plan, probe (against outside services or the old app itself), skeletons, tests.
+   **Approval 2 (freeze).**
+6. Build, overnight if wanted (6.11).
+7. Flip each seam from mock to real. **Approval 3.**
+8. When `CUTOVER.md` is all ticked, a pull request swaps in the new app; the owner merges it.
+   **Approval 4.**
+
+`/seam-v2:start` also works in an empty folder for a new app (it skips the survey).
+
+Details:
 
 - At setup the plugin asks: **new branch** (default) or **new repo**. A branch keeps
   history and makes the switch a merge. A new repo suits rebuilds that change most of the
@@ -302,11 +350,24 @@ tried to change tests/orders.test.ts after freeze." Agents can't write to it.
 
 A CI workflow in the app repo re-runs, from scratch, on each pull request: fingerprints
 against `lock.json`, every code file in the plan, no skipped tests, all tests green, code
-rules. It also **checks the signatures** on every approval (6.4) against the owner's public
-key, and fails if the lock, plan or tests don't match what was signed. That gives CI a
-trusted baseline even on a rebuild branch where everything is new. The CI workflow itself is
-set up as a required check from `main`, so a PR can't weaken it. This is the backstop for
+rules, and that the lock matches the fingerprints recorded with each approval. The CI
+workflow is a required check from `main`, so a PR can't weaken it. This is the backstop for
 anything done on the local machine that the hooks missed.
+
+### 6.11 Overnight runs
+
+Once the freeze is approved, the build needs nothing from the owner:
+
+- Approve the freeze in the evening; builders fill files one after another overnight.
+- Failing files are parked, not blocking (6.6), so one hard file doesn't stop the night.
+- In the morning, `seam report` says in plain English what got built, what's parked and why,
+  how often the guard blocked, and what needs the owner.
+- Requirements, set up by `/seam-v2:start`: Claude Code left open (desktop app or terminal),
+  the PC kept awake for the run (setup offers to do this while a run is active), and Claude
+  Code's own permission prompts pre-allowed for the plugin's commands only, so no "may I run
+  this?" prompt stalls the run at 2am. The guard keeps everything else locked.
+- Planning can't finish unattended (it ends in the owner's approval), but it can draft
+  everything overnight and have it waiting.
 
 ## 7. Cheat tests (written first)
 
@@ -320,8 +381,8 @@ not Claude Code's behaviour, so each stage also has a few live checks in a real 
 
 ## 8. What the owner sees
 
-- A few approvals, each a one-screen summary plus the passphrase, in the approval window.
-- Questions only when a file strikes out, a test is marked defective, the main AI tampers, or
+- A few approvals, each a one-screen summary and a short code, in the approval window.
+- Questions only about parked files, tests marked defective, a main-AI tamper, or when
   the plan needs to change.
 - `seam report` and `.seam/log.md` for status, in plain words.
 
@@ -335,23 +396,23 @@ not Claude Code's behaviour, so each stage also has a few live checks in a real 
 | 4 | Swap approved steps for different ones in build | **allowed** | fingerprints of everything but bodies |
 | 5 | Edit the file list / manifest in build | **allowed** | plan is frozen and fingerprinted |
 | 6 | Put code in a folder the guard doesn't watch | **allowed** | every code file anywhere must be in the plan |
-| 7 | Move to build with finished code and fake status | **allowed** | phase moves only on a signed human approval |
+| 7 | Move to build with finished code and fake status | **allowed** | phase moves only on a human approval in the approval window |
 | 8 | Write code, trim it to pass, then restore it | happened in practice | no AI writes code before build; in build, fingerprint + turn checks |
 | 9 | Soften the exam (vague steps, weak or skipped tests) | not checked | checker reviews plan and each test; skip and assertion scan; tests must fail on skeletons and on hollow versions |
 | 10 | Edit the guard or its records | not checked | guard protects plugin files and `.seam/`; data-folder copy; CI check |
 | 11 | Hide code in comments the checker trusts | not checked | describer reads stripped code without the plan |
-| 12 | Fake an approval | commit-message tag | approvals are signed with the owner's passphrase; CI checks the signature |
+| 12 | AI approves on the owner's behalf | commit-message tag | approvals only in a separate window the AI is blocked from running and that needs a real keyboard |
 | 13 | Builder reads the tests and codes to them | not checked | builder reads an allowlist only, never tests; gets sentences only |
 | 14 | Main AI steers a subagent through its instructions ("write PASS", pastes tests) | n/a | script-written instructions; guard blocks any other agent start or message (15.1) |
 | 15 | Real logic hidden in contracts or test helpers | n/a | contracts may hold only schemas and types; app files can't import from tests (15.2) |
 | 16 | Turn the exam green through config (`passWithNoTests`, test globs, aliases) or switch the plugin off in `.claude/settings` | n/a | config files written by script, frozen at approval 2; `.claude/` protected; hook heartbeat (15.3) |
 | 17 | Tests that only check "it didn't crash" | n/a | tests must also fail on hollow versions (6.1 step 6) |
 | 18 | Edit steps or tests after the checker passed them, before freeze | n/a | verdicts store fingerprints; freeze refuses on mismatch (15.5) |
-| 19 | Code under test writes the guard's records, or detects the test run | n/a | tests run in a locked-down child process; bodies can't use `fs`, dynamic `import` or `require` (15.7) |
+| 19 | Code under test writes the guard's records, or detects the test run | n/a | bodies can't use `fs`, dynamic `import` or `require`; tamper check before recording (15.7) |
 | 20 | Crash or stall the guard so it lets things through | n/a | guard fails closed (15.9) |
 | 21 | Start a background process early that writes later | n/a | command allowlist in every phase; background runs blocked (15.10) |
-| 22 | Point the probe at a fake local server | n/a | probe calls only approved addresses, shown in the freeze summary (15.12) |
-| 23 | Use "I'm stuck" to dump hard files on the human | n/a | stuck counts as a strike (6.6) |
+| 22 | Point the probe at a made-up address | n/a | probe calls only approved addresses, shown in the freeze summary (15.12) |
+| 23 | Use "I'm stuck" to dump hard files on the human | n/a | stuck must name the step and attempts; it gets a fresh retry before parking (6.6) |
 | 24 | Design pass slips logic changes into finished screens | n/a | design pass limited to styling, checked by code comparison (15.8) |
 
 ## 10. Honest limits
@@ -363,8 +424,8 @@ not Claude Code's behaviour, so each stage also has a few live checks in a real 
   stripping make honest review the easy path, not a guarantee.
 - The human approving is the final check. Keeping approvals few and short is how the design
   protects that.
-- The approval passphrase is only as safe as the owner keeps it. If the AI ever sees it (say
-  it's pasted into the chat), approvals can be forged until it's changed.
+- The approval window stops the AI approving casually. It isn't proof against a determined
+  attacker on the machine; that's a deliberate trade (1.2, section 17).
 - Cheat tests feed the guard pretend tool calls. They prove the guard's logic, not that
   Claude Code sends what we expect; the live checks in section 11 cover that.
 
@@ -383,12 +444,13 @@ not Claude Code's behaviour, so each stage also has a few live checks in a real 
 
    If one of these comes out differently than the design assumes, stop and bring it back to
    the owner before building on it. Then write the cheat tests (all of section 9), then the
-   guard until they pass: role table, phases, fingerprints, tamper check, signed approvals,
-   fail-closed, log. Tried on a tiny practice app.
+   guard until they pass: role table, phases, fingerprints, tamper check, approval window,
+   fail-closed, log with block counts. Tried on a tiny practice app.
 2. **Planning.** Survey, plan format and checker review, skeleton script, test checks
    (skip scan, must-fail-first), freeze.
 3. **Build loop.** Builder, describer and checker agents, SubagentStop test runs, strikes,
-   stuck, the skill-driven loop, then the Workflow if its test passes.
+   stuck, parking, the skill-driven loop, overnight setup, then the Workflow if its test
+   passes.
 4. **Probes and flips.** Probe script and fixtures, mocks from fixtures, `tests/real/`,
    flips, cutover, CI check.
 
@@ -441,7 +503,8 @@ Each stage ends with its cheat tests green and one run on the practice app.
 1. **Where it runs:** the Claude Code desktop app and the terminal CLI, both on the owner's
    Windows machine. Cloud, web and phone sessions are not supported.
    **How approvals work (follows from that, as described in 6.4):** `seam approve` runs in a
-   separate window with a real keyboard. Setup installs `seam` so it works outside Claude Code,
+   separate window with a real keyboard; no passphrase (owner agreed 2026-11-26 the heavy
+   version isn't needed unless the AI shows it is). Setup installs `seam` so it works outside Claude Code,
    and puts a "Seam Approve" shortcut on the desktop that opens that window, so approving
    from the desktop app is a double-click.
 2. **Screens go through the build loop.** Components and routes are planned files with steps
@@ -479,13 +542,10 @@ in section 9 and gets a cheat test.
    and they're re-generated and compared, not reverted.
 5. **Verdicts are tied to what was reviewed.** Every checker verdict stores the fingerprints
    of what it reviewed. Freeze and "done" refuse if anything changed since.
-6. **Signed approvals** (6.4): a passphrase typed with nothing shown, set once at setup,
-   unlocks a key that signs each approval together with what it approves. CI checks the
-   signature.
-7. **Locked-down test runs.** Tests run in a separate Node process with Node's permission
-   limits: no writes outside a temp folder and no network during build. The tamper check runs
-   before any test result is recorded. Builder bodies may not use `fs`, dynamic `import()` or
-   `require`, so code can't reach the guard's records or detect that it's being tested.
+6. **Approvals** (6.4): the reviewer's signed-passphrase version is held back (section 17).
+7. **Test runs.** The tamper check runs before any test result is recorded. Builder bodies may
+   not use `fs`, dynamic `import()` or `require`, so code can't reach the guard's records or
+   detect that it's being tested. (A fully locked-down test process is held back, section 17.)
 8. **Design pass = styling only, checked by code comparison.** It may change CSS files,
    `className` text and style values, nothing else. A script compares the code before and
    after (by structure, not text); any other change sends the file back through the checker
@@ -497,8 +557,8 @@ in section 9 and gets a cheat test.
     in the plan; anything else is blocked. Background and detached runs are blocked, so
     nothing started early can write later.
 11. **The owner's own edits.** The owner can still change files by hand: `seam edit <file>`
-    (in the approval window, with the passphrase) opens a signed window where the owner's
-    changes are accepted and the fingerprints updated. Without it, the tamper check would undo
+    (in the approval window) opens a window where the owner's changes are accepted and the
+    fingerprints updated. Without it, the tamper check would undo
     the owner's work. Formatters run only through `seam format`, which re-fingerprints.
 12. **Probe addresses come from approvals.** The probe calls only addresses listed in the
     approved inventory or features, and the freeze summary lists them, so a fake local server
@@ -515,8 +575,8 @@ in section 9 and gets a cheat test.
     links and trailing dots. The protected list includes Claude Code's installed copy of the
     plugin (in its plugin cache) and its installed-plugins record, not only `plugin-src`.
 16. **Parallel tool calls.** Hooks can run at the same time, so records are written under a
-    lock. If a change can't be tied to one agent, it's blamed on the main AI (which stops the
-    run, 6.6) rather than guessed.
+    lock. If a change can't be tied to one agent, it's reverted and logged as "unattributed"
+    rather than guessed; it doesn't halt the run unless it repeats.
 17. **Fast tamper check.** A full check runs after commands and unknown tools. After file
     tools, a quick check of modified times and sizes is enough, with a full check when
     something looks changed.
@@ -536,4 +596,15 @@ pass (with the owner, then another blind review) covers what this doc leaves rou
 - reopened seams: the per-seam phase model and re-test of dependent files;
 - the design pass for screens in practice;
 - cutover: moving `seam-app/` to the root changes every path in the lock, so the lock is
-  rewritten under a signed approval as part of the cutover PR.
+  rewritten under approval 4 as part of the cutover PR.
+
+## 17. Held back unless the AI shows we need them
+
+Added only if `seam report`'s block log shows the AI testing the walls, not just taking
+ordinary shortcuts:
+
+- Signed approvals: a passphrase (or Windows Hello) unlocks a key that signs each approval;
+  CI checks the signature.
+- Tests run in a separate locked-down Node process (no writes outside temp, no network).
+- Defences against faked keyboards, scripted windows and pseudo-terminals.
+- CI verifying approvals cryptographically instead of by recorded fingerprints.
