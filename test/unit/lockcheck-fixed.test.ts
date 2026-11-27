@@ -65,27 +65,35 @@ describe('a class a signature points at is fixed', () => {
   test('a new class is fine', () => expect(check(`${text}class Other {}\n`, against)).toEqual([]));
 });
 
-describe('a type can not take the name of one TypeScript provides', () => {
+describe('a type declared in the file can not take a name the JavaScript language uses for a type (R37)', () => {
   const withTop = (code: string): string => `${total()}\n${code}\n`;
   test.each([
+    ['type Promise<T> = T;', 'Promise'],
     ['type Promise<T> = string;', 'Promise'],
     ['type Record<K, V> = number;', 'Record'],
     ['type Partial<T> = T;', 'Partial'],
+    ['type Awaited<T> = T;', 'Awaited'],
     ['interface Date { x: 1 }', 'Date'],
     ['interface Array<T> { x: 1 }', 'Array'],
     ['class Map {}', 'Map'],
     ['class Set {}', 'Set'],
     ['class Error {}', 'Error'],
-    ['enum Event { A }', 'Event'],
-    ['declare class URL {}', 'URL'],
-    ["import type { Date } from 'react';", 'Date'],
-    ["import { Response } from 'react';", 'Response'],
-    ["import * as Request from 'react';", 'Request'],
-    ["import Node from 'react';", 'Node'],
+    ['enum Symbol { A }', 'Symbol'],
+    ['declare class Iterator {}', 'Iterator'],
   ])('%s', (code, name) => expect(check(withTop(code))).toEqual([builtIn(name)]));
 
   test('names that only look alike are fine', () =>
     expect(check(withTop('type Dates = 1;\ninterface MyDate {}\nclass MapOf {}\nenum Errors { A }'))).toEqual([]));
   test('a value with that name is not a type', () => expect(check(withTop('const Date = 1;'))).toEqual([]));
   test('two of them are both named', () => expect(check(withTop('type Promise = 1;\ninterface Date {}'))).toEqual([builtIn('Date'), builtIn('Promise')]));
+
+  test('a local interface named like a browser type is fine', () => {
+    expect(check(withTop('interface Event {}'))).toEqual([]);
+    expect(check(withTop('interface Node { next: Node | null }\nclass Text {}\ntype Request = 1;\nenum Location { A }\ninterface Window {}'))).toEqual([]);
+  });
+  test('an import named like a type of the language or the browser is fine, it is fingerprinted by what it stands for', () => {
+    expect(check(withTop("import { Request } from 'react';\nimport type { Response as Reply, Date as Day } from 'react';"))).toEqual([]);
+    expect(check(withTop("import { Request } from 'react';"))).toEqual([]);
+    expect(check(withTop("import type { Date } from 'react';\nimport * as Map from 'react';\nimport Promise from 'react';"))).toEqual([]);
+  });
 });

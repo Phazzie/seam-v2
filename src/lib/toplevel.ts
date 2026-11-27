@@ -53,11 +53,13 @@ function namesTaken(stmt: ts.Statement): { values: string[]; types: string[] } {
   return { values: [], types: [] };
 }
 
-/** Names a statement gives to types. The ones TypeScript's own types already use are not available. */
+/**
+ * Names a file declares for types itself (not what it imports; an import is fingerprinted by what it
+ * stands for). The names the JavaScript language already gives to types are not available.
+ */
 function typeNames(stmt: ts.Statement): string[] {
   if (ts.isTypeAliasDeclaration(stmt) || ts.isInterfaceDeclaration(stmt)) return [stmt.name.text];
-  if (ts.isClassDeclaration(stmt) || ts.isEnumDeclaration(stmt)) return stmt.name ? [stmt.name.text] : [];
-  return ts.isImportDeclaration(stmt) || ts.isImportEqualsDeclaration(stmt) ? namesTaken(stmt).types : [];
+  return (ts.isClassDeclaration(stmt) || ts.isEnumDeclaration(stmt)) && stmt.name ? [stmt.name.text] : [];
 }
 
 /** Everything wrong with the top level of a file, in plain words. */
