@@ -19,6 +19,10 @@ describe('an import can not leave the package the plan names', () => {
     '@scope/../lodash',
     'react/%2e%2e/lodash',
     'react/..%2flodash',
+    'react/node_modules/lodash',
+    'react/node_modules/lodash/fp',
+    'node_modules/lodash',
+    '@scope/pkg/node_modules/lodash',
   ])('%s', (spec) => expect(check(withImport(spec))).toEqual(refused(spec)));
 
   test.each([
@@ -73,10 +77,10 @@ describe('wrapped exports keep their bodies out of the signature', () => {
       'export const M = memo(forwardRef((p: { n: number }, ref: unknown) => { return null; }));');
   });
   test('an object with methods', () => {
-    const locked = "export const api = { run(a: number): number { throw new Error('x'); }, get size(): number { throw new Error('x'); }, go: (b: number) => { throw new Error('x'); } };";
-    filled(locked, 'export const api = { run(a: number): number { return a; }, get size(): number { return 1; }, go: (b: number) => b };');
-    changed(locked, 'export const api = { run(a: string): number { return 1; }, get size(): number { return 1; }, go: (b: number) => b };', 'api');
-    changed(locked, 'export const api = { run(a: number): number { return a; }, get size(): number { return 1; }, go: (b: number) => b, extra: 1 };', 'api');
+    const locked = "export const api = { run(a: number): number { throw new Error('x'); }, go: (b: number) => { throw new Error('x'); } };";
+    filled(locked, 'export const api = { run(a: number): number { return a; }, go: (b: number) => b };');
+    changed(locked, 'export const api = { run(a: string): number { return 1; }, go: (b: number) => b };', 'api');
+    changed(locked, 'export const api = { run(a: number): number { return a; }, go: (b: number) => b, extra: 1 };', 'api');
   });
   test('parentheses, as, satisfies and a non-null mark', () => {
     for (const wrap of ['((a: number) => { throw new Error("x"); })', '((a: number) => { throw new Error("x"); }) as Fn', '((a: number) => { throw new Error("x"); }) satisfies Fn']) {
@@ -86,8 +90,7 @@ describe('wrapped exports keep their bodies out of the signature', () => {
     changed('export const f = ((a: number) => { throw new Error("x"); }) as Fn;', 'export const f = ((a: string) => { return 1; }) as Fn;', 'f');
     changed('export const f = ((a: number) => { throw new Error("x"); }) as Fn;', 'export const f = ((a: number) => { return 1; }) as Gn;', 'f');
   });
-  test('a class expression and a class with property arrows', () => {
-    filled("export const K = class { m(a: number) { throw new Error('x'); } };", 'export const K = class { m(a: number) { return a; } };');
+  test('a class with property arrows', () => {
     filled("export class Z { h = (a: number) => { throw new Error('x'); }; m(a: number) { throw new Error('x'); } }", 'export class Z { h = (a: number) => a; m(a: number) { return a; } }');
   });
   test('an exported value that points at a private function carries that function\'s signature', () => {

@@ -1,9 +1,10 @@
-// Review fix R31: nothing outside a function may run code when the file loads.
+// Nothing outside a function may run code when the file loads (R31, tightened by R34/R35/R36).
 import { describe, expect, test } from 'vitest';
 import { checkAgainstLock } from '../../src/lib/lockcheck.ts';
 import { FILLED, HEADER_END, check, edit, lockFor, plan } from '../helpers/lockcheck.ts';
 
 const NOT_ALLOWED = "a statement outside any function isn't allowed";
+const NO_NAMESPACES = "'declare global', 'declare module' and 'namespace' aren't allowed in app files";
 const withTop = (...lines: string[]): string => `${FILLED}\n${lines.join('\n')}\n`;
 
 describe('code that runs while the file loads is refused', () => {
@@ -29,9 +30,8 @@ describe('code that runs while the file loads is refused', () => {
     ['a class static block', 'class A { static { init(); } }'],
     ['a class static value that runs code', 'class A { static x = init(); }'],
     ['a class computed name that runs code', 'class A { [init()]() {} }'],
-    ['a class that extends an expression', 'class A extends mixin(Base) {}'],
+    ['a class that extends a call', 'class A extends mixin(Base) {}'],
     ['a decorator', '@dec class A {}'],
-    ['a namespace with code in it', 'namespace N { init(); }'],
     ['an enum value that runs code', 'enum E { A = init() }'],
     ['export default of a call', 'export default init();'],
     ['using', 'using r = init();'],
@@ -39,10 +39,22 @@ describe('code that runs while the file loads is refused', () => {
     ['a template that calls', 'const x = `a${init()}b`;'],
     ['an increment', 'let n = 0;\nn++;'],
     ['a call on a built-in', "console.log('loaded');"],
-  ])('%s', (_name, code) => expect(check(withTop(code), undefined, plan)).toContain(NOT_ALLOWED));
+    ['a class used as a value', 'const K = class {};'],
+  ])('%s', (_name, code) => expect(check(withTop(code))).toContain(NOT_ALLOWED));
 
   test('the message is given once, however many statements there are', () =>
     expect(check(withTop('init();', 'init();')).filter((p) => p === NOT_ALLOWED)).toHaveLength(1));
+});
+
+describe('namespaces and global declarations are refused in app files', () => {
+  test.each<[string, string]>([
+    ['declare global', 'declare global { interface Window { w: 1 } }'],
+    ['declare module', "declare module 'x' { export const y: number; }"],
+    ['declare namespace', 'declare namespace Foo { const x: number; }'],
+    ['a namespace with code in it', 'namespace N { init(); }'],
+    ['a plain module', 'module M {}'],
+    ['a namespace merged onto an exported name', 'declare namespace total { const x: number; }'],
+  ])('%s', (_name, code) => expect(check(withTop(code))).toContain(NO_NAMESPACES));
 });
 
 describe('declarations that only define things are fine', () => {
@@ -51,20 +63,19 @@ describe('declarations that only define things are fine', () => {
     ['a let with no value', 'let counter;'],
     ['var', "var legacy = 'x';"],
     ['literals of every kind', "const a = 1, b = 'x', c = -1, d = null, e = /x/g, f = `t`, g = undefined, h = true, i = 10n;"],
-    ['arithmetic on literals', 'const T = 60 * 60 + 1;\nconst S = `a${T}b`;\nconst U = !T && T > 0;'],
-    ['an object of literals, functions and methods', "const cfg = { a: 1, b: [1, 2, { c: 'x' }], f() { return 1; }, g: () => 2, get h() { return 3; }, 'k-q': -1, ['lit']: 2, short };"],
-    ['wrapped in as, satisfies and parentheses', "const w = ({ a: 1 } as const) satisfies object;"],
+    ['arithmetic on literals', 'const T = 60 * 60 + 1;\nconst M = -(1 << 3);'],
+    ['an object of literals, functions and methods', "const cfg = { a: 1, b: [1, 2, { c: 'x' }], f() { return 1; }, g: () => 2, 'k-q': -1, ['lit']: 2, short };"],
+    ['wrapped in as, satisfies and parentheses', 'const w = ({ a: 1 } as const) satisfies object;'],
     ['a function kept in a name', 'const fn = (a: number) => a;\nconst fe = function () { return 1; };'],
-    ['memo and forwardRef', 'const C = memo((p: { n: number }) => null);\nconst R = React.forwardRef(function R(props, ref) { return null; });'],
-    ['a pattern with no defaults', 'const { a, b: [c] } = other;'],
-    ['a class with methods, an extends name and an instance value that calls', "class Box extends React.Component { static kind = 'box'; x = init(); m() { return 1; } }"],
+    ['a plain name given another name', 'const alias = total;'],
+    ['a class with methods, an extends name and an instance value that calls', "class Box extends Base { static kind = 'box'; x = init(); m() { return 1; } }"],
     ['an enum with literal values', "enum Kind { A = 1, B = 'b', C = 1 + 2 }"],
     ['types and interfaces', 'type T = string;\ninterface I { a: T }'],
-    ['ambient declarations', "declare const g: number;\ndeclare function gg(): void;\ndeclare module 'x' { export const y: number; }\ndeclare global { interface Window { w: 1 } }"],
+    ['ambient declarations of values', 'declare const g: number;\ndeclare function gg(): void;'],
     ['function overloads', 'function o(a: string): void;\nfunction o(a: number): void;\nfunction o(a: unknown) {}'],
     ['a stray semicolon and an empty export', ';\nexport {};'],
     ['an import', "import { useMemo } from 'react';"],
-  ])('%s', (_name, code) => expect(check(withTop(code), undefined, plan)).toEqual([]));
+  ])('%s', (_name, code) => expect(check(withTop(code))).toEqual([]));
 
   test('a directive after the header', () => expect(check(edit(HEADER_END, `${HEADER_END}'use client';\n`))).toEqual([]));
 });
@@ -75,9 +86,6 @@ describe('a name declared twice', () => {
   test('a constant and a function', () => twice('const h = 1;\nfunction h() {}', 'h'));
   test('a second function with the name of an export', () => {
     expect(check(withTop('function total() { return 0; }'))).toContain("'total' is declared more than once");
-  });
-  test('a namespace merged onto an exported name', () => {
-    expect(check(withTop('declare namespace total { const x: number; }'))).toContain("'total' is declared more than once");
   });
   test('an import and a local of the same name', () => twice("import { h } from 'react';\nconst h = 1;", 'h'));
   test('a class and an interface (they would merge)', () => twice('class K {}\ninterface K { a: 1 }', 'K'));
@@ -101,10 +109,13 @@ describe('a CommonJS file', () => {
   });
   test('assigning over the function', () => expect(cjs(`${SKELETON}total = () => 0;\n`)).toContain(NOT_ALLOWED));
   test('a second export is a new export', () => {
-    const problems = cjs(`${SKELETON}exports.extra = () => 1;\n`);
-    expect(problems).toEqual(["new export 'exports.extra' isn't in the plan"]);
+    expect(cjs(`${SKELETON}exports.extra = () => 1;\n`)).toEqual(["new export 'exports.extra' isn't in the plan"]);
   });
   test('an export that runs code', () => expect(cjs(`${SKELETON}exports.extra = init();\n`)).toContain(NOT_ALLOWED));
+  test.each([
+    'exports.__proto__.x', 'module.exports.__proto__', 'exports.constructor.prototype', "exports['__proto__']", 'module.exports.prototype.x',
+    'exports.a.constructor', "module.exports['constructor']",
+  ])('a CommonJS export through %s', (target) => expect(cjs(`${SKELETON}${target} = () => 1;\n`)).toContain(NOT_ALLOWED));
   test('the signature of an exported function can not change', () => {
     expect(cjs(SKELETON.replace('total(a, b)', 'total(a)'))).toEqual(["export module.exports's signature changed"]);
   });

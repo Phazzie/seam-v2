@@ -22,7 +22,7 @@ export function importedNames(clause: ts.ImportClause): string[] {
 }
 
 /** The names a statement declares, each with the declaration printed without its body. */
-function declared(stmt: ts.Statement, sf: ts.SourceFile): [string, string][] {
+export function declared(stmt: ts.Statement, sf: ts.SourceFile): [string, string][] {
   if (ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt) || ts.isInterfaceDeclaration(stmt)
     || ts.isTypeAliasDeclaration(stmt) || ts.isEnumDeclaration(stmt) || ts.isModuleDeclaration(stmt)) {
     return stmt.name ? [[stmt.name.text, print(withoutBody(stmt), sf)]] : [];

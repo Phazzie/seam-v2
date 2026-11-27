@@ -1,5 +1,6 @@
 // Review fixes R27 (a file that doesn't parse) and R28 (local types are fixed too).
 import { describe, expect, test } from 'vitest';
+import { parseLock } from '../../src/formats/lock.ts';
 import { checkAgainstLock } from '../../src/lib/lockcheck.ts';
 import { fingerprintCode } from '../../src/lib/fingerprint.ts';
 import { planFile, skeleton, total } from '../helpers/code.ts';
@@ -35,10 +36,10 @@ describe('local types are fixed', () => {
   const typedCheck = (text: string): string[] => check(text, typed);
 
   test('the typed file itself is fine', () => expect(typedCheck(TYPED)).toEqual([]));
-  test('the lock names every type alias, interface and enum, exported or not', () => {
+  test('the lock names every type alias, interface, enum, class and variable, exported or not', () => {
     const src = 'type A = 1;\nexport type B = 2;\ninterface C {}\nexport interface D {}\nenum E { X }\nexport enum F { Y }\nconst G = 1;\nclass H {}';
     expect(Object.keys(fingerprintCode('a.ts', src).fixed ?? {}).sort()).toEqual(
-      ['enum E', 'enum F', 'interface C', 'interface D', 'type A', 'type B']);
+      ['class H', 'const G', 'enum E', 'enum F', 'interface C', 'interface D', 'type A', 'type B']);
   });
   test('a local type alias changed from number to string', () =>
     expect(typedCheck(TYPED.replace('type Money = number', 'type Money = string'))).toEqual(['type Money was changed or removed']));
@@ -61,12 +62,10 @@ describe('local types are fixed', () => {
     const exported = total({ top: ['export type Money = number;'], params: 'a: Money, b: Money' });
     expect(check(exported.replace('Money = number', 'Money = string'), lockOf(exported))).toEqual(["export Money's signature changed"]);
   });
-  test('a lock without the list of types (made before it existed) still checks everything else', () => {
+  test('a code lock without the list of fixed things is not a lock', () => {
     const entry = lockOf(TYPED).files['src/pricing/total.ts'];
     if (entry.kind !== 'code') throw new Error('expected a code lock');
     const { fixed: _dropped, ...without } = entry;
-    const lock = { version: 1 as const, files: { 'src/pricing/total.ts': without } };
-    expect(check(TYPED, lock)).toEqual([]);
-    expect(check(TYPED.replace('type Money = number', 'type Money = string'), lock)).toEqual([]);
+    expect(() => parseLock({ version: 1, files: { 'src/pricing/total.ts': without } })).toThrow(/fixed/);
   });
 });

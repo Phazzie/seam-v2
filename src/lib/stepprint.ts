@@ -52,16 +52,27 @@ function holderLabel(node: ts.Node, sf: ts.SourceFile): string | null {
   return null;
 }
 
-/** An unnamed function or arrow handed straight to a call (`list.forEach((x) => { ... })`, `useEffect(() => { ... })`). */
+/**
+ * An unnamed function or arrow handed straight to a call (`list.forEach((x) => { ... })`,
+ * `useEffect(() => { ... })`), as a value in an object or array given to a call (`run({ fn: () => { ... } })`),
+ * or as a JSX value (`onClick={() => { ... }}`).
+ */
 function isInlineCallback(node: ts.Node): boolean {
   if (!(ts.isArrowFunction(node) || (ts.isFunctionExpression(node) && !node.name))) return false;
   let child: ts.Node = node;
   let at = node.parent;
-  while (isWrapper(at)) {
-    child = at;
-    at = at.parent;
+  for (;;) {
+    if (isWrapper(at) || ts.isArrayLiteralExpression(at)) {
+      child = at; // `(() => {...})`, `[() => {...}]`
+    } else if (ts.isPropertyAssignment(at) && at.initializer === child) {
+      child = at.parent; // `{ fn: () => {...} }`: on to the object, whatever it is part of
+    } else if (ts.isJsxExpression(at)) {
+      return true; // `onClick={() => {...}}`
+    } else {
+      return (ts.isCallExpression(at) || ts.isNewExpression(at)) && (at.arguments ?? []).some((arg) => arg === child);
+    }
+    at = child.parent;
   }
-  return (ts.isCallExpression(at) || ts.isNewExpression(at)) && (at.arguments ?? []).some((arg) => arg === child);
 }
 
 /**

@@ -21,11 +21,13 @@ function exportProblems(locked: CodeLock, now: CodeLock): string[] {
   return [...changed.filter((p): p is string => p !== null), ...added];
 }
 
-/** Local types are fixed too. A new one is fine (an exported one is caught as a new export); a changed or missing one is not. */
+/**
+ * What a signature can lean on is fixed too: local types, classes, constants and what each import stands
+ * for. A new one is fine (an exported one is caught as a new export); a changed or missing one is not.
+ */
 function fixedProblems(locked: CodeLock, now: CodeLock): string[] {
-  const current = now.fixed ?? {};
-  return Object.entries(locked.fixed ?? {})
-    .filter(([key, sig]) => own(current, key) !== sig && own(locked.exports, key.slice(key.indexOf(' ') + 1)) === undefined) // an exported one is reported as an export
+  return Object.entries(locked.fixed)
+    .filter(([key, sig]) => own(now.fixed, key) !== sig && own(locked.exports, key.slice(key.indexOf(' ') + 1)) === undefined) // an exported one is reported as an export
     .map(([key]) => `${key} was changed or removed`);
 }
 
