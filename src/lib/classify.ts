@@ -11,17 +11,21 @@ export type PathClass =
   | 'contracts' | 'tests' | 'fixtures' | 'config-file' | 'app-code' | 'generated' | 'ignored'
   | 'other-in-repo' | 'outside';
 
-/** `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as code). */
-const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore)$/i;
+/**
+ * `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as
+ * code), and the files that make a tool run code or read its settings from the repo (R52): `.npmrc`, `.yarnrc`,
+ * `.yarnrc.yml`, `.babelrc`, `.babelrc.*`, `babel.config.*`, `.swcrc`, `.env`, `.env.*`, `.nvmrc`, `.node-version`, `.tool-versions`.
+ */
+const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore|\.npmrc|\.yarnrc(?:\.yml)?|\.babelrc(?:\..+)?|babel\.config\..+|\.swcrc|\.env(?:\..+)?|\.nvmrc|\.node-version|\.tool-versions)$/i;
 /** Folders only a build tool writes, when they sit at the top of the repo or the app (and `node_modules` anywhere). */
 const OUTPUT_DIRS = new Set(['dist', '.next', '.nuxt', '.output', '.svelte-kit', '.turbo', '.vercel', 'coverage', '.vite', '.parcel-cache']);
 const TEST_DIRS = new Set(['tests', 'test']);
 
-/** Is `relPath` a file the build rules treat as code? (`.json` and `.sql` count, except under `probes/` and `.seam/`.) */
+/** Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`; `.json` and `.sql` count, except under `probes/` and `.seam/`.) */
 export function isCodeFile(relPath: string): boolean {
   const parts = posix.normalize(relPath.replace(/\\/g, '/')).split('/').map(tidyPart).filter((part) => part !== '');
   const path = parts.join('/').toLowerCase();
-  if (/\.(?:tsx?|jsx?|mjs|cjs)$/.test(path)) return true;
+  if (/\.(?:[cm]?[jt]s|[jt]sx)$/.test(path)) return true;
   return /\.(?:json|sql)$/.test(path) && !/^(?:probes|\.seam)\//.test(path);
 }
 

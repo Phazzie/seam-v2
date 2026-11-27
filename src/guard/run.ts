@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { readGuardEnv } from '../config/env.ts';
 import type { GuardEnv } from '../config/env.ts';
 import { touchHeartbeat } from '../lib/heartbeat.ts';
-import { extendedPathProblem, isPathRefusal, staysOnNetwork } from '../lib/pathcheck.ts';
+import { extendedPathProblem, isPathRefusal, staysOnNetwork, streamPathProblem } from '../lib/pathcheck.ts';
 import type { HookInput } from '../types.ts';
 import { buildCtx } from './context.ts';
 import { raceDeadline } from './deadline.ts';
@@ -70,7 +70,7 @@ async function inSeamProject(run: Run, found: Extract<Found, { kind: 'seam' }>):
   if (found.problem !== null) return deny(run, found.problem);
   if (hasUnreadablePath(input)) return deny(run, COULDNT_READ, 'a path in tool_input is not text');
   for (const target of targetsOf(input)) {
-    const problem = extendedPathProblem(target);
+    const problem = extendedPathProblem(target) ?? streamPathProblem(target);
     if (problem !== null) return deny(run, problem);
   }
   if (env.dataDir === null || env.pluginRoot === null) {

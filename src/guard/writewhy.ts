@@ -30,7 +30,9 @@ export const ONLY_BUILDERS = 'only builders write app code; the main AI plans an
 export const IN_BUILD_OUTPUT = "node_modules and build output can't be written to (logic could hide there)";
 export const OUTSIDE_MAIN_ONLY = 'only the main AI may write outside the project; a builder writes its own file, inside it';
 export const CONTRACTS_TS_ONLY = 'contracts hold TypeScript schemas only';
-export const NO_LOCK ='there is no lock yet, so the build has not started and no code can be written';
+export const PLAN_HOLDS = 'plan/ holds notes (.md) and plan.json only';
+export const PLAN_MISSING = "plan/plan.json is missing, so the guard can't tell which files are protected; ask the owner";
+export const NO_LOCK = 'there is no lock yet, so the build has not started and no code can be written';
 
 export const notInPlan = (file: string): string => `${file} isn't in the plan: code that is not in the plan can't be written anywhere`;
 export const notYourTurn = (file: string): string => `it isn't this builder's turn for ${file}`;

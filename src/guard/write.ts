@@ -28,10 +28,14 @@ const ALLOW: Decision = { kind: 'allow' };
 const deny = (reason: string): Decision => ({ kind: 'deny', reason });
 
 const PLANNING = new Set<Phase>(['setup', 'survey', 'plan1', 'plan2']);
+/** The phases that come before a plan.json has to exist (R53). */
+const BEFORE_PLAN = new Set<Phase>(['setup', 'survey', 'plan1']);
 /** A checker's one file: `.seam/verdicts/<name>.json`, straight inside that folder. */
 const VERDICT = /^\.seam\/verdicts\/[^/]+\.json$/;
 /** The only kind of file in `contracts/` (R49). */
 const TYPESCRIPT = /\.ts$/i;
+/** The only kinds of file in `plan/` (R50): notes and plan.json. Anything else there could be code. */
+const PLAN_FILE = /\.(?:md|json)$/i;
 
 /** A file a write names: where it really is, and what it is to the guard. */
 interface Target {
@@ -98,7 +102,9 @@ async function decideContract(input: HookInput, ctx: Ctx, t: Target): Promise<De
 function decideMain(input: HookInput, ctx: Ctx, t: Target): Promise<Decision> | Decision {
   const { phase } = ctx.state;
   switch (t.cls) {
-    case 'plan': return PLANNING.has(phase) ? ALLOW : deny(why.planFrozen(phase));
+    case 'plan':
+      if (!PLANNING.has(phase)) return deny(why.planFrozen(phase));
+      return PLAN_FILE.test(t.name) ? ALLOW : deny(why.PLAN_HOLDS);
     case 'contracts': return decideContract(input, ctx, t);
     case 'tests': return phase === 'tests' ? ALLOW : deny(why.testsFrozen(phase));
     case 'app-code': return deny(why.ONLY_BUILDERS);
@@ -110,7 +116,7 @@ function decideMain(input: HookInput, ctx: Ctx, t: Target): Promise<Decision> | 
 async function decideBuilder(input: HookInput, ctx: Ctx, t: Target): Promise<Decision> {
   const { phase, turn } = ctx.state;
   if (phase !== 'build') return deny(why.buildOnly(phase));
-  const itsTurn = input.agent_id === turn.agentId && turn.file !== null && resolveReal(ctx.root, turn.file) === t.real;
+  const itsTurn = typeof input.agent_id === 'string' && input.agent_id === turn.agentId && turn.file !== null && resolveReal(ctx.root, turn.file) === t.real;
   if (!itsTurn) return deny(why.notYourTurn(t.name));
   if (ctx.lock === null || ctx.plan === null) return deny(why.NO_LOCK);
   const proposed = proposedContent(input, currentText(input, t.real));
@@ -137,6 +143,8 @@ async function decideFile(input: HookInput, ctx: Ctx, t: Target): Promise<Decisi
 
 /** May this tool call write what it names? A refusal says why, in plain words. */
 export async function decideWrite(input: HookInput, ctx: Ctx): Promise<Decision> {
+  // Without plan.json the lists of generated, config and old-app paths are lost, so nothing can be told apart (R53).
+  if (ctx.plan === null && !BEFORE_PLAN.has(ctx.state.phase)) return deny(why.PLAN_MISSING);
   const named = targetsOf(input);
   if (named.length === 0) return deny(why.NO_FILE);
   for (const written of named) {
