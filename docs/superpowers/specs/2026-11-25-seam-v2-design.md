@@ -1,6 +1,7 @@
 # seam-v2: design
 
-Status: draft for the owner's approval. Date: 2026-11-25.
+Status: approved by the owner on 2026-11-27 (stages 1 and 2; stages 3 and 4 get a second
+design pass, section 16). Date: 2026-11-25.
 
 ## 1. What this is and why
 
