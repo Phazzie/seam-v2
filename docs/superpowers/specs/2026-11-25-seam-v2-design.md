@@ -34,7 +34,8 @@ one.
 1. Each known cheat (section 9) is blocked or caught, and a cheat test proves it.
 2. Code gets into the app only through the build loop: a builder fills a frozen skeleton,
    the guard's tests pass, and the checker agrees.
-3. The human makes few, short decisions, by typing them. The AI cannot make them.
+3. The human makes few, short decisions, signed with a passphrase in a separate window. The
+   AI cannot make them.
 4. Works on a new app and on an existing app (rebuild beside it).
 5. Plain-English record of everything, so the owner can follow it without reading code.
 
