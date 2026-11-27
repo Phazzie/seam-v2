@@ -2,6 +2,7 @@
 // its body. A function's signature, a class's method signatures and an arrow function's parameters
 // and types are all in the hash; the code inside them is not.
 import ts from 'typescript';
+import { importBindings } from './importprint.ts';
 import { jsdocTypes } from './jsdocprint.ts';
 import { print, withoutBody, withoutFnBody } from './printing.ts';
 import { hash } from './text.ts';
@@ -37,7 +38,8 @@ export function declared(stmt: ts.Statement, sf: ts.SourceFile): [string, string
     });
   }
   if (ts.isImportEqualsDeclaration(stmt)) return [[stmt.name.text, print(stmt, sf)]];
-  if (ts.isImportDeclaration(stmt) && stmt.importClause) return importedNames(stmt.importClause).map((n): [string, string] => [n, print(stmt, sf)]);
+  // Per binding, not the whole statement: growing `import { memo }` to `{ memo, useState }` does not change what `memo` is.
+  if (ts.isImportDeclaration(stmt)) return importBindings(stmt).map(([name, what]): [string, string] => [name, `import ${name} = ${what}`]);
   return [];
 }
 
