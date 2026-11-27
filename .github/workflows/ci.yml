@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    # The guard is Windows-first (paths, PowerShell, PATHEXT), so CI runs on Windows.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Is there a Node project yet?
+        id: project
+        shell: bash
+        run: |
+          if [ -f package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "No package.json yet: nothing to check."; fi
+
+      - name: Install
+        if: steps.project.outputs.present == 'true'
+        run: npm ci
+
+      - name: Type check
+        if: steps.project.outputs.present == 'true'
+        run: npm run typecheck
+
+      - name: Build
+        if: steps.project.outputs.present == 'true'
+        run: npm run build
+
+      - name: Unit tests
+        if: steps.project.outputs.present == 'true'
+        run: npx vitest run test/unit
+
+      # The cheat suite is red by design until the guard is complete (stage 1, Task 13).
+      # It runs here for visibility and becomes required once stage 1 is finished.
+      - name: Cheat tests (informational until stage 1 is complete)
+        if: steps.project.outputs.present == 'true' && hashFiles('test/cheats/**') != ''
+        continue-on-error: true
+        run: npx vitest run test/cheats
