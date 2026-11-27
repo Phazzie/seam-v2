@@ -29,16 +29,23 @@ describe('controls: the guard lets legitimate work through', () => {
   });
 
   // Task 3's review: a guard that refused every command would pass all the command cheats (2, 7, 10, 12, 21).
-  // These run the real hook in a seam project, in the phases the cheats use, and in both shells.
-  describe.each<Phase>(['plan1', 'skeleton', 'build'])('control for the command cheats, in %s', (phase) => {
+  // These run the real hook in a seam project, in the phases the cheats use, and in both shells. The tests run only
+  // in the build and flip phases (R59), so the other phases' controls are the commands that are always allowed.
+  const ALWAYS: ['Bash' | 'PowerShell', string][] = [
+    ['Bash', 'git status'], ['PowerShell', 'git status'], ['Bash', 'npm run typecheck'], ['PowerShell', 'npm run typecheck'],
+    ['Bash', 'seam report'], ['PowerShell', 'seam status'], ['Bash', 'git log --oneline -5'], ['Bash', 'git diff'], ['Bash', 'node --version'],
+  ];
+  const TESTS: ['Bash' | 'PowerShell', string][] = [
+    ['Bash', 'npm test'], ['PowerShell', 'npm test'], ['Bash', 'npm run test'], ['Bash', 'npx vitest run test/total.test.ts'], ['PowerShell', 'npx vitest run'],
+  ];
+  describe.each<[Phase, ['Bash' | 'PowerShell', string][]]>([
+    ['plan1', ALWAYS], ['skeleton', ALWAYS], ['build', [...ALWAYS, ...TESTS]], ['flip', [...ALWAYS, ...TESTS]],
+  ])('control for the command cheats, in %s', (phase, commands) => {
     let app: App;
     beforeAll(async () => {
       app = await makeApp({ phase });
     });
-    test.each<['Bash' | 'PowerShell', string]>([
-      ['Bash', 'git status'], ['PowerShell', 'git status'], ['Bash', 'npm test'], ['PowerShell', 'npm test'], ['Bash', 'npm run typecheck'],
-      ['Bash', 'npx vitest run test/total.test.ts'], ['Bash', 'seam report'], ['PowerShell', 'seam status'], ['Bash', 'git log --oneline -5'], ['Bash', 'git diff'],
-    ])('the main agent can run %s: %s', async (tool, command) => {
+    test.each(commands)('the main agent can run %s: %s', async (tool, command) => {
       expectAllowed(await app.hook(run(tool, command, asMain())));
     });
   });

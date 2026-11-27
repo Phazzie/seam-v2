@@ -1,8 +1,0 @@
-import { createRequire as __seamCreateRequire } from 'node:module';
-import { fileURLToPath as __seamFileURLToPath } from 'node:url';
-import { dirname as __seamDirname } from 'node:path';
-const require = __seamCreateRequire(import.meta.url);
-const __filename = __seamFileURLToPath(import.meta.url);
-const __dirname = __seamDirname(__filename);
-import{homedir as d}from"node:os";import{join as u}from"node:path";var g=new Set([";","&","|","<",">","(",")","{","}","`",`
-`,"\r"]),p=new Set(["cd","chdir","pushd","sl","set-location","push-location"]),f=/^[a-z]:/i,h=/^[a-z][a-z0-9+.-]*:\/\//i,m=/^\/(?:(?:cygdrive|mnt)\/([a-z])|([a-z])(?=\/))(?:\/(.*))?$/i;function S(n,e=!1){let t=[],l=[],i="",r=!1,s=null,c=()=>{r&&l.push(i),i="",r=!1},a=()=>{c(),l.length>0&&t.push(l),l=[]};for(let o of n)s!==null?o===s?s=null:i+=o:o==='"'||o==="'"?e?c():(s=o,r=!0):g.has(o)?a():o===" "||o==="	"?c():(i+=o,r=!0);return a(),{segments:t,closed:s===null}}function w(n){let e=n;if(e.startsWith("-")){let t=/^-{1,2}[^=:\s]+[=:](.*)$/.exec(e)?.[1];if(t===void 0)return null;e=t}return h.test(e)||/^\/[a-z?]$/i.test(e)?null:(!f.test(e)&&e.includes(":")&&(e=e.slice(e.lastIndexOf(":")+1)),e===""||/^[\\/]+$/.test(e)?null:e)}var $=n=>/[\\/]/.test(n)||/^[.~]/.test(n)||f.test(n);function z(n){let e=new Set([n]);f.test(n)||e.add(n.replace(/\\(.)/g,"$1"));let t=m.exec(n);return t!==null&&e.add(`${(t[1]??t[2]).toUpperCase()}:/${t[3]??""}`),/^~(?:[\\/]|$)/.test(n)&&e.add(u(d(),n.slice(1))),[...e]}function v(n){let e=new Set;for(let t of[!1,!0])for(let l of S(n,t).segments){let i=!1;for(let r of l){if(p.has(r.toLowerCase())){i=!0;continue}let s=w(r);s!==null&&((i||$(s))&&z(s).forEach(c=>e.add(c)),i=!1)}}return[...e]}export{S as a,w as b,z as c,v as d};

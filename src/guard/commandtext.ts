@@ -68,7 +68,16 @@ export function scan(command: string, blind = false): Scanned {
  * git ref in front (`HEAD:src/a.ts` names `src/a.ts`). Null for an option without a value, a web address, one of
  * cmd's switches (`/c`), or nothing but separators.
  */
-export function pathText(word: string): string | null {
+export const pathText = (word: string): string | null => pathParts(word)?.text ?? null;
+
+/** What a word says about a path: the text, and whether a git ref was in front of it (`ref:path`, which git reads from the top of the repository, R60). */
+export interface PathParts {
+  text: string;
+  ref: boolean;
+}
+
+/** `pathText`, with whether the path came after a ref. A ref cannot hold a colon, so the path starts after the first one. */
+export function pathParts(word: string): PathParts | null {
   let text = word;
   if (text.startsWith('-')) {
     const value = /^-{1,2}[^=:\s]+[=:](.*)$/.exec(text)?.[1];
@@ -76,12 +85,16 @@ export function pathText(word: string): string | null {
     text = value;
   }
   if (SCHEME.test(text) || /^\/[a-z?]$/i.test(text)) return null;
-  if (!DRIVE.test(text) && text.includes(':')) text = text.slice(text.lastIndexOf(':') + 1);
-  return text === '' || /^[\\/]+$/.test(text) ? null : text;
+  const ref = !DRIVE.test(text) && text.includes(':');
+  if (ref) text = text.slice(text.indexOf(':') + 1);
+  return text === '' || /^[\\/]+$/.test(text) ? null : { text, ref };
 }
 
+/** A word as a shell passes it on once the backslash escapes are taken out: `--out\put` is `--output`. */
+export const unescaped = (word: string): string => word.replace(/\\(.)/g, '$1');
+
 /** Does it look like a path (and so is worth a look when nothing says it is one)? */
-export const isPathLike = (text: string): boolean => /[\\/]/.test(text) || /^[.~]/.test(text) || DRIVE.test(text);
+export const isPathLike = (text: string): boolean => /[\\/]/.test(text) || /^[.~]/.test(text);
 
 /**
  * Every way a shell could read this path: as written; with backslashes taken as escapes (the way bash reads
@@ -90,11 +103,22 @@ export const isPathLike = (text: string): boolean => /[\\/]/.test(text) || /^[.~
  */
 export function readingsOf(text: string): string[] {
   const readings = new Set([text]);
-  if (!DRIVE.test(text)) readings.add(text.replace(/\\(.)/g, '$1')); // a drive path with backslashes is meant as one
+  if (!DRIVE.test(text)) readings.add(unescaped(text)); // a drive path with backslashes is meant as one
   const msys = MSYS.exec(text);
   if (msys !== null) readings.add(`${(msys[1] ?? msys[2]).toUpperCase()}:/${msys[3] ?? ''}`);
   if (/^~(?:[\\/]|$)/.test(text)) readings.add(join(homedir(), text.slice(1)));
   return [...readings];
+}
+
+/**
+ * `pathText` for finding the project: after a ref, only what follows the last colon. Free text such as `a: b: c` in a
+ * heredoc is then not mistaken for a path with a hidden stream, which run.ts refuses.
+ */
+function targetText(word: string): string | null {
+  const parts = pathParts(word);
+  if (parts === null) return null;
+  const text = DRIVE.test(parts.text) ? parts.text : parts.text.slice(parts.text.lastIndexOf(':') + 1);
+  return text === '' ? null : text;
 }
 
 /**
@@ -112,7 +136,7 @@ export function commandTargets(command: string): string[] {
           changing = true;
           continue;
         }
-        const text = pathText(word);
+        const text = targetText(word);
         if (text === null) continue; // an option: a pending folder change waits for its target
         if (changing || isPathLike(text)) readingsOf(text).forEach((reading) => found.add(reading));
         changing = false;

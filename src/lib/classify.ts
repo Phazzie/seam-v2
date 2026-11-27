@@ -25,13 +25,14 @@ const OUTPUT_DIRS = new Set(['dist', '.next', '.nuxt', '.output', '.svelte-kit',
 const TEST_DIRS = new Set(['tests', 'test']);
 
 /**
- * Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`, the scripts `.sh .ps1 .bat .cmd .py`
- * and the framework files `.vue .svelte .astro` (R54); `.json` and `.sql` count, except under `probes/` and `.seam/`.)
+ * Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`, the scripts `.sh .ps1 .py` and the
+ * framework files `.vue .svelte .astro` (R54), and everything Windows runs by name (R58: the default PATHEXT, `.com .exe .bat .cmd
+ * .vbs .vbe .js .jse .wsf .wsh .msc`, and `.hta .scr .lnk`); `.json` and `.sql` count, except under `probes/` and `.seam/`.)
  */
 export function isCodeFile(relPath: string): boolean {
   const parts = posix.normalize(relPath.replace(/\\/g, '/')).split('/').map(tidyPart).filter((part) => part !== '');
   const path = parts.join('/').toLowerCase();
-  if (/\.(?:[cm]?[jt]s|[jt]sx|sh|ps1|bat|cmd|py|vue|svelte|astro)$/.test(path)) return true;
+  if (/\.(?:[cm]?[jt]s|[jt]sx|sh|ps1|py|vue|svelte|astro|com|exe|bat|cmd|vbs|vbe|jse|wsf|wsh|msc|hta|scr|lnk)$/.test(path)) return true;
   return /\.(?:json|sql)$/.test(path) && !/^(?:probes|\.seam)\//.test(path);
 }
 
@@ -53,8 +54,8 @@ const covered = (views: View[], entries: readonly string[]): boolean =>
     return listedAs !== null && listedAs !== '' && (v.rel === listedAs || v.rel.startsWith(`${listedAs}/`));
   }));
 const insideDir = (dir: string, p: string): boolean => dir !== '' && rel(resolveReal(dir, '.'), p) !== null;
-/** `CLAUDE.md`, `AGENTS.md` and `AGENTS.project.md` in any folder (R54): the instructions the AI works under. */
-const INSTRUCTIONS = /^(?:claude|agents(?:\.project)?)\.md$/i;
+/** `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.project.md` and the like, in any folder (R54, R60): the instructions the AI works under. */
+const INSTRUCTIONS = /^(?:claude(?:\.local)?|agents(?:\.[^.]+)*)\.md$/i;
 
 const git = (root: string, args: string[]) =>
   spawnSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 10_000 });

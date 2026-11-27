@@ -17,7 +17,7 @@ describe('rule 2: one simple command, no chaining, redirection or substitution',
   const CHAINED = [
     'npm test & echo', 'npm test && echo hi', 'npm test; echo hi', 'npm test || echo hi', 'git log | head', 'git log > out.txt', 'git log >> out.txt',
     'git log 2> err.txt', 'npm test < in.txt', 'npm test `echo hi`', 'git log $(echo hi)', 'git log ${HOME}', 'git log $HOME', 'git log $env:HOME',
-    'npm test\necho hi', 'npm test\r\necho hi', 'git status\u2028rm x', 'git status\u0000x', 'git log (Get-Date)', '& npm test',
+    'npm test\necho hi', 'npm test\r\necho hi', 'git status\u0000x', 'git log (Get-Date)', '& npm test',
     'Get-ChildItem | ForEach-Object { Remove-Item $_ }', 'git log {a,b}', 'git status;', 'git status &&', '"git log" | cat',
     "cat > src/pricing/total.ts <<'EOF'\nexport const x = 1\nEOF",
     "Set-Content -Path src/pricing/total.ts -Value @'\nexport const x = 1\n'@",

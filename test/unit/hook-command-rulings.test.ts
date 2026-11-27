@@ -1,0 +1,56 @@
+// R56, R57 and R59 in the real bundle (dist/hook.mjs, run as a child process the way Claude Code runs it): what the
+// unit tests ask of the decisions directly, asked of the hook that reads Claude Code's JSON and prints its answer.
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, test } from 'vitest';
+import { makeApp } from '../helpers/app.ts';
+import { expectAllowed, expectDenied, pre, run } from '../helpers/calls.ts';
+
+const NBSP = String.fromCodePoint(0xa0);
+const LEFT_QUOTE = String.fromCodePoint(0x2018);
+const RIGHT_QUOTE = String.fromCodePoint(0x2019);
+
+describe('R56 in the hook: the words must be the words the shell passes on', () => {
+  test('PowerShell: a non-breaking space where a space would be', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('PowerShell', `git diff HEAD${NBSP}--output=evil.txt`)), /plain ASCII only/);
+  });
+  test('PowerShell: curly quotes', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('PowerShell', `git diff ${LEFT_QUOTE}--output=evil.txt${RIGHT_QUOTE}`)), /plain ASCII only/);
+  });
+  test('PowerShell: a comma list', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('PowerShell', 'git diff HEAD,--output=evil.txt')), /comma is not allowed/);
+  });
+  test('Bash: a backslash that hides an option', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('Bash', 'git diff \\--output=evil.txt')), /backslash before/);
+    expectDenied(await app.hook(run('Bash', 'git diff --out\\put=evil.txt')), /can write a file or run a program/);
+  });
+});
+
+describe('R57 in the hook: outside the project only the temp folder is writable', () => {
+  test.each(['.gitconfig', '.npmrc', '.bashrc'])('~/%s is refused', async (name) => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(pre('Write', { file_path: join(homedir(), name), content: 'x\n' })), /only the temp folder is writable/);
+  });
+  test('a file in the temp folder is allowed', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectAllowed(await app.hook(pre('Write', { file_path: join(tmpdir(), 'seam-hook-test', 'notes.txt'), content: 'x\n' })));
+  });
+});
+
+describe('R59 in the hook: the tests run only in the build and flip phases', () => {
+  test.each(['setup', 'plan1', 'skeleton', 'tests'] as const)('npm test is refused in %s, and typecheck is not', async (phase) => {
+    const app = await makeApp({ phase });
+    expectDenied(await app.hook(run('Bash', 'npm test')), /tests run through the seam scripts in this phase/);
+    expectDenied(await app.hook(run('PowerShell', 'npx vitest run')), /tests run through the seam scripts in this phase/);
+    expectAllowed(await app.hook(run('Bash', 'npm run typecheck')));
+  });
+  test.each(['build', 'flip'] as const)('npm test is allowed in %s', async (phase) => {
+    const app = await makeApp({ phase });
+    expectAllowed(await app.hook(run('Bash', 'npm test')));
+    expectAllowed(await app.hook(run('PowerShell', 'npx vitest run test/total.test.ts')));
+  });
+});

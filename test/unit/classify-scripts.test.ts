@@ -53,10 +53,10 @@ describe('R54: the folders and files that run things are config files', () => {
 });
 
 describe('R54: the instruction files are Claude config in any folder', () => {
-  test.each(['CLAUDE.md', 'docs/CLAUDE.md', 'src/AGENTS.md', 'packages/a/b/AGENTS.project.md', 'src/deep/er/claude.md', 'A/Agents.Project.MD'])(
+  test.each(['CLAUDE.md', 'docs/CLAUDE.md', 'src/AGENTS.md', 'packages/a/b/AGENTS.project.md', 'src/deep/er/claude.md', 'A/Agents.Project.MD', 'CLAUDE.local.md', 'src/deep/CLAUDE.local.md', 'src/AGENTS.local.md'])(
     '%s is claude-config', (path) => expect(p.at(path)).toBe('claude-config'),
   );
-  test.each(['README.md', 'docs/CLAUDE.md.bak', 'src/MYCLAUDE.md', 'src/AGENTS.local.md', 'docs/CLAUDE.mdx', 'CLAUDE/notes.md', 'src/claude-notes.md'])(
+  test.each(['README.md', 'docs/CLAUDE.md.bak', 'src/MYCLAUDE.md', 'src/CLAUDE.local.md.bak', 'docs/CLAUDE.mdx', 'CLAUDE/notes.md', 'src/claude-notes.md'])(
     '%s is not', (path) => expect(p.at(path)).not.toBe('claude-config'),
   );
   test('the app folder and the repo both count', () => {

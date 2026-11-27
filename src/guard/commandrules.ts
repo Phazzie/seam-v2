@@ -2,8 +2,9 @@
 // answer also says which words decideCommand must still check for protected paths: all of them for a command that
 // is refused, the arguments after the command for one that is allowed.
 import { resolveReal } from '../lib/paths.ts';
-import type { Ctx } from '../types.ts';
-import { notOnList, wrongUse } from './commandwhy.ts';
+import type { Ctx, Phase } from '../types.ts';
+import { unescaped } from './commandtext.ts';
+import { notOnList, TESTS_NOT_HERE, wrongUse } from './commandwhy.ts';
 
 export type Judged = { ok: true; args: string[] } | { ok: false; reason: string; args: string[] };
 
@@ -25,6 +26,9 @@ const BRANCH_LONG = new Set([
 const BRANCH_SHORT = new Set(['a', 'r', 'v', 'i']);
 /** A name given to `git branch` makes a branch, unless the command is asking for a list. */
 const BRANCH_LISTING = new Set(['list', 'contains', 'no-contains', 'merged', 'no-merged', 'points-at']);
+
+/** The words as the shell passes them on, and with the backslash escapes taken out (`--out\put` is `--output`): an option check asks about both (R56). */
+export const readings = (words: string[]): string[][] => [words, words.map(unescaped)];
 
 const ok = (args: string[]): Judged => ({ ok: true, args });
 const refuse = (reason: string, args: string[]): Judged => ({ ok: false, reason, args });
@@ -79,31 +83,40 @@ function branchProblem(args: string[]): string | null {
 function gitCommand(words: string[]): Judged {
   const [, verb = '', ...args] = words;
   const name = verb.toLowerCase();
-  if (name === 'branch') {
-    const bad = branchProblem(args);
-    return bad === null ? ok(args) : refuse(wrongUse(`git branch ${bad}`, 'git branch only lists branches; it must not make, rename or delete one'), words);
+  if (name !== 'branch' && !GIT_READS.has(name)) return refuse(notOnList(words), words);
+  for (const asPassed of readings(args)) {
+    if (name === 'branch') {
+      const bad = branchProblem(asPassed);
+      if (bad !== null) return refuse(wrongUse(`git branch ${bad}`, 'git branch only lists branches; it must not make, rename or delete one'), words);
+    } else {
+      const bad = refusedOption(asPassed);
+      if (bad !== null) return refuse(wrongUse(`git ${verb} ${bad.arg}`, bad.why), words);
+    }
   }
-  if (!GIT_READS.has(name)) return refuse(notOnList(words), words);
-  const bad = refusedOption(args);
-  return bad === null ? ok(args) : refuse(wrongUse(`git ${verb} ${bad.arg}`, bad.why), words);
+  return ok(args);
 }
 
 const same = (words: string[], form: string[]): boolean => words.length === form.length && words.every((word, i) => word.toLowerCase() === form[i]);
+/** Tests are written, then frozen; there is something to run them on only from the build on (R59). */
+const TEST_PHASES = new Set<Phase>(['build', 'flip']);
+const testsMayRun = (ctx: Ctx): boolean => TEST_PHASES.has(ctx.state.phase);
 
-/** `npm test`, `npm run test`, `npm run typecheck` and `npm --version`: nothing added, since an option can change what runs. */
-function npmCommand(words: string[]): Judged {
+/** `npm test` and `npm run test` (build and flip only, R59), `npm run typecheck` and `npm --version` (any phase): nothing added, since an option can change what runs. */
+function npmCommand(words: string[], ctx: Ctx): Judged {
   const rest = words.slice(1);
-  if ([['test'], ['run', 'test'], ['run', 'typecheck'], ['--version']].some((form) => same(rest, form))) return ok([]);
+  if (same(rest, ['run', 'typecheck']) || same(rest, ['--version'])) return ok([]);
+  if (same(rest, ['test']) || same(rest, ['run', 'test'])) return testsMayRun(ctx) ? ok([]) : refuse(TESTS_NOT_HERE, []);
   const [head = '', next = ''] = rest.map((word) => word.toLowerCase());
   const listed = head === 'test' || (head === 'run' && (next === 'test' || next === 'typecheck'));
   return refuse(listed ? wrongUse(words.join(' '), 'npm test and npm run typecheck take nothing added; npx vitest run <path> runs one test file') : notOnList(words), words);
 }
 
-/** `npx vitest run [path ...]`: paths only, because an option such as --config or --reporter can load code. */
-function npxCommand(words: string[]): Judged {
+/** `npx vitest run [path ...]` (build and flip only, R59): paths only, because an option such as --config or --reporter can load code. */
+function npxCommand(words: string[], ctx: Ctx): Judged {
   const [, tool, verb, ...args] = words;
   if (tool?.toLowerCase() !== 'vitest' || verb?.toLowerCase() !== 'run') return refuse(notOnList(words), words);
-  const option = args.find((arg) => arg.startsWith('-'));
+  if (!testsMayRun(ctx)) return refuse(TESTS_NOT_HERE, []);
+  const option = readings(args).flat().find((arg) => arg.startsWith('-'));
   return option === undefined ? ok(args) : refuse(wrongUse(`npx vitest run ${option}`, 'it takes test file paths only; an option can load code'), words);
 }
 
@@ -113,8 +126,8 @@ export function judge(words: string[], cwd: string, ctx: Ctx): Judged {
     case 'seam': return seamCommand(words[1], words.slice(2));
     case 'node': return nodeCommand(words, cwd, ctx);
     case 'git': return gitCommand(words);
-    case 'npm': return npmCommand(words);
-    case 'npx': return npxCommand(words);
+    case 'npm': return npmCommand(words, ctx);
+    case 'npx': return npxCommand(words, ctx);
     default: return refuse(notOnList(words), words);
   }
 }

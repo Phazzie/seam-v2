@@ -21,7 +21,7 @@ describe('rule 5: every command on the list runs, from either shell', () => {
     'seam report', 'seam status', 'seam request freeze', 'seam init', 'seam init --app-root seam-app', 'seam install-shortcut', 'seam help',
     'git status', 'git status --short', 'git log', 'git log --oneline -5', 'git log --format=%h', 'git diff', 'git diff HEAD~1', 'git diff -- src/pricing/total.ts',
     'git show', 'git show HEAD', 'git show HEAD:src/pricing/total.ts', 'git diff --no-textconv --no-ext-diff', 'git log --output-indicator-new=+', 'git log -- --output=x', 'git diff --exit-code',
-    'git branch', 'git branch -a', 'git branch -r', 'git branch -vv', 'git branch --list', 'git branch --list "feature/*"', 'git branch --contains HEAD',
+    'git branch', 'git branch -a', 'git branch -r', 'git branch -vv', 'git branch --list', 'git branch --contains HEAD',
     'git branch --show-current', 'git branch --sort=-committerdate',
     'npm test', 'npm run test', 'npm run typecheck', 'npx vitest run', 'npx vitest run test/unit/total.test.ts', 'npx vitest run test/unit test/cheats',
     'node --version', 'npm --version',

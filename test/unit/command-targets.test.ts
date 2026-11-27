@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { commandTargets as exportedByCommand } from '../../src/guard/command.ts';
-import { commandTargets, isPathLike, pathText, readingsOf, scan } from '../../src/guard/commandtext.ts';
+import { commandTargets, isPathLike, pathParts, pathText, readingsOf, scan, unescaped } from '../../src/guard/commandtext.ts';
 import { targetsOf } from '../../src/guard/request.ts';
 
 test('command.ts exports commandTargets too (it is the same function)', () => expect(exportedByCommand).toBe(commandTargets));
@@ -36,6 +36,26 @@ describe('scan: the words of a command', () => {
   });
 });
 
+describe('pathParts (R60): a path, and whether a git ref was in front of it', () => {
+  test.each([
+    ['HEAD:src/a.ts', 'src/a.ts', true], ['origin/main:CLAUDE.md', 'CLAUDE.md', true], [':.seam/state.json', '.seam/state.json', true], ['HEAD~1:a/b', 'a/b', true],
+    ['HEAD:./x', './x', true], ['--format=%h:%s', '%s', true],
+    ['src/a.ts', 'src/a.ts', false], ['C:\\x\\y', 'C:\\x\\y', false], ['-Path:C:\\x', 'C:\\x', false], ['--output=.seam/x', '.seam/x', false], ['status', 'status', false],
+  ])('%s', (word, text, ref) => expect(pathParts(word)).toEqual({ text, ref }));
+  test('a ref cannot hold a colon, so the path starts after the first one', () => {
+    expect(pathParts('HEAD:a:b')).toEqual({ text: 'a:b', ref: true });
+  });
+  test('and nothing where pathText gives nothing', () => {
+    for (const word of ['--oneline', 'https://x.y/z', '/c', '', 'HEAD:']) expect(pathParts(word)).toBeNull();
+  });
+});
+
+describe('unescaped: a word once the backslash escapes are taken out', () => {
+  test.each([['--out\\put', '--output'], ['a\\ b', 'a b'], ['\\--x', '--x'], ['C:\\a\\b', 'C:ab'], ['plain', 'plain'], ['a\\', 'a\\']])('%s is %s', (word, plain) => {
+    expect(unescaped(word)).toBe(plain);
+  });
+});
+
 describe('pathText and isPathLike', () => {
   test.each([
     ['src/a.ts', 'src/a.ts'], ['C:\\x\\y', 'C:\\x\\y'], ['--output=/proj/y', '/proj/y'], ['-Path:C:\\x', 'C:\\x'], ['--root=x', 'x'], ['HEAD:src/a.ts', 'src/a.ts'],
@@ -44,8 +64,8 @@ describe('pathText and isPathLike', () => {
   test.each(['--oneline', '-5', '-', '--', 'https://example.com/a', 'ftp://x/y', '/', '//', '\\', '/c', '/b', '/?', '-Path', ''])('%j is not a path', (word) => {
     expect(pathText(word)).toBeNull();
   });
-  test.each(['src/a.ts', 'a\\b', '.seam', '..', '~', '~/x', 'C:', 'C:\\x', '/c/x', './a'])('%s looks like one', (text) => expect(isPathLike(text)).toBe(true));
-  test.each(['status', 'report', 'HEAD', 'freeze', 'a.ts', 'total'])('%s does not', (text) => expect(isPathLike(text)).toBe(false));
+  test.each(['src/a.ts', 'a\\b', '.seam', '..', '~', '~/x', 'C:\\x', 'C:/x', '/c/x', './a'])('%s looks like one', (text) => expect(isPathLike(text)).toBe(true));
+  test.each(['status', 'report', 'HEAD', 'freeze', 'a.ts', 'total', 'C:', 'a:', 'x:'])('%s does not', (text) => expect(isPathLike(text)).toBe(false));
 });
 
 describe('readingsOf: every way a shell could read a path', () => {
@@ -110,6 +130,8 @@ describe('commandTargets: what a command names', () => {
     expect(cmd('Push-Location proj')).toEqual(['proj']);
     expect(cmd('chdir proj')).toEqual(['proj']);
     expect(cmd('cd ..')).toEqual(['..']);
+    expect(cmd('cd c:')).toEqual(['c:']); // a drive alone is a folder after cd, and nothing without it
+    expect(cmd('git log --grep a: b: x:')).toEqual([]);
   });
   test('and after any separator, in a group or in a subshell, quoted or not', () => {
     expect(cmd('echo hi; cd proj; rm x')).toContain('proj');
@@ -143,6 +165,8 @@ describe('commandTargets: what a command names', () => {
     expect(cmd('cmd /c dir')).toEqual([]);
     expect(cmd('git log main..HEAD')).toEqual([]);
     expect(cmd('git log --grep "fix: login"')).toEqual([]);
+    expect(cmd('git log --grep "Inputs: a: number, b: number"')).toEqual([]); // no colon is left in a path to be taken for a hidden stream
+    expect(cmd("cat > x <<'EOF'\nPurpose: add a: b: c\nEOF").every((target) => !/^[^:]*:.*:/.test(target))).toBe(true);
   });
   test('the same path once', () => {
     expect(cmd('git diff a/b a/b')).toEqual(['a/b']);
