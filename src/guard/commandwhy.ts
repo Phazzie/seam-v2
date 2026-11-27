@@ -14,6 +14,10 @@ export const NO_VERIFY = '--no-verify is not allowed: the git hooks always run';
 export const NON_ASCII = 'plain ASCII only: other characters (curly quotes, non-breaking spaces and the like) are not allowed in a command, since they can hide what a word is';
 export const POWERSHELL_COMMA = 'a comma is not allowed in a PowerShell command (it turns two words into one list); one simple command at a time, please';
 export const BASH_BACKSLASH = 'a backslash before -, =, a quote or a space is not allowed in a Bash command (it hides what a word is); use plain words';
+export const POWERSHELL_EXPAND = 'a %, a @ or --% is not allowed in a PowerShell command (they expand or re-split what follows)';
+export const POWERSHELL_QUOTING =
+  'a word with a space or a double quote, or a backslash at the end of a word or next to a quote, is not allowed in a PowerShell command (Windows PowerShell hands the program a different list of words; quote a word only around the whole of it)';
+export const PATH_SPELLING = 'that way of writing a path (:N:path, :/path, ~+, ~-, ~name) is not allowed; name the file plainly';
 export const TOO_LONG = 'this command is too long for the guard to check (over 200 words)';
 export const WILDCARD = "wildcards (* ? [) are not allowed in a command's words; name the file or folder itself";
 export const TESTS_NOT_HERE = 'tests run through the seam scripts in this phase';

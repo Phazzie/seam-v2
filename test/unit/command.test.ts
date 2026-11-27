@@ -19,7 +19,7 @@ const script = (): string => join(s.app.pluginRoot, 'dist', 'seam.mjs');
 describe('rule 5: every command on the list runs, from either shell', () => {
   const ALLOWED = [
     'seam report', 'seam status', 'seam request freeze', 'seam init', 'seam init --app-root seam-app', 'seam install-shortcut', 'seam help',
-    'git status', 'git status --short', 'git log', 'git log --oneline -5', 'git log --format=%h', 'git diff', 'git diff HEAD~1', 'git diff -- src/pricing/total.ts',
+    'git status', 'git status --short', 'git log', 'git log --oneline -5', 'git diff', 'git diff HEAD~1', 'git diff -- src/pricing/total.ts',
     'git show', 'git show HEAD', 'git show HEAD:src/pricing/total.ts', 'git diff --no-textconv --no-ext-diff', 'git log --output-indicator-new=+', 'git log -- --output=x', 'git diff --exit-code',
     'git branch', 'git branch -a', 'git branch -r', 'git branch -vv', 'git branch --list', 'git branch --contains HEAD',
     'git branch --show-current', 'git branch --sort=-committerdate',
@@ -49,6 +49,11 @@ describe('rule 5: every command on the list runs, from either shell', () => {
 
   test('run_in_background set to false is not a background run', () => {
     expectRuns(s, 'npm test', { extra: { run_in_background: false } });
+  });
+
+  test('Bash only: a format with % and a word with a space (R61 refuses both in PowerShell)', () => {
+    expectRuns(s, 'git log --format=%h');
+    expectRuns(s, 'git log --grep="a b" --format="%h %s"');
   });
 });
 

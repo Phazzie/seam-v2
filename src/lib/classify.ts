@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, posix, resolve } from 'node:path';
+import { runnableExtensions } from '../config/pathext.ts';
 import type { Ctx } from '../types.ts';
 import { rel, resolveReal, tidyPart } from './realpath.ts';
 
@@ -13,11 +14,12 @@ export type PathClass =
 
 /**
  * `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as
- * code), and the files that make a tool run code or read its settings from the repo (R52): `.npmrc`, `.yarnrc`,
+ * code, and what attributes (filters, diff drivers) a file gets, R62: `.gitattributes`), and the files that make a tool
+ * run code or read its settings from the repo (R52): `.npmrc`, `.yarnrc`,
  * `.yarnrc.yml`, `.babelrc`, `.babelrc.*`, `babel.config.*`, `.swcrc`, `.env`, `.env.*`, `.nvmrc`, `.node-version`, `.tool-versions`;
  * and (R54) `Makefile`, `.prettierrc*`, `.eslintrc*`, `bunfig.toml` and `pnpm-workspace.yaml`.
  */
-const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore|\.npmrc|\.yarnrc(?:\.yml)?|\.babelrc(?:\..+)?|babel\.config\..+|\.swcrc|\.env(?:\..+)?|\.nvmrc|\.node-version|\.tool-versions|(?:gnu)?makefile|\.prettierrc.*|\.eslintrc.*|bunfig\.toml|pnpm-workspace\.yaml)$/i;
+const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore|\.gitattributes|\.npmrc|\.yarnrc(?:\.yml)?|\.babelrc(?:\..+)?|babel\.config\..+|\.swcrc|\.env(?:\..+)?|\.nvmrc|\.node-version|\.tool-versions|(?:gnu)?makefile|\.prettierrc.*|\.eslintrc.*|bunfig\.toml|pnpm-workspace\.yaml)$/i;
 /** Folders that run things at commit, build or editor time (R54): everything in one, at any depth, is a config file. */
 const CONFIG_DIRS = new Set(['.husky', '.github', '.vscode', '.devcontainer']);
 /** Folders only a build tool writes, when they sit at the top of the repo or the app (and `node_modules` anywhere). */
@@ -27,12 +29,15 @@ const TEST_DIRS = new Set(['tests', 'test']);
 /**
  * Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`, the scripts `.sh .ps1 .py` and the
  * framework files `.vue .svelte .astro` (R54), and everything Windows runs by name (R58: the default PATHEXT, `.com .exe .bat .cmd
- * .vbs .vbe .js .jse .wsf .wsh .msc`, and `.hta .scr .lnk`); `.json` and `.sql` count, except under `probes/` and `.seam/`.)
+ * .vbs .vbe .js .jse .wsf .wsh .msc`, `.hta .scr .lnk`, and (R62) `.cpl .pif .psm1 .psd1 .msi .msp .reg .url .appref-ms`, and every
+ * extension in this machine's own PATHEXT, which cmd.exe also runs by name); `.json` and `.sql` count, except under `probes/` and `.seam/`.)
  */
 export function isCodeFile(relPath: string): boolean {
   const parts = posix.normalize(relPath.replace(/\\/g, '/')).split('/').map(tidyPart).filter((part) => part !== '');
   const path = parts.join('/').toLowerCase();
-  if (/\.(?:[cm]?[jt]s|[jt]sx|sh|ps1|py|vue|svelte|astro|com|exe|bat|cmd|vbs|vbe|jse|wsf|wsh|msc|hta|scr|lnk)$/.test(path)) return true;
+  if (/\.(?:[cm]?[jt]s|[jt]sx|sh|ps1|py|vue|svelte|astro|com|exe|bat|cmd|vbs|vbe|jse|wsf|wsh|msc|hta|scr|lnk|cpl|pif|psm1|psd1|msi|msp|reg|url|appref-ms)$/.test(path)) return true;
+  const dot = path.lastIndexOf('.');
+  if (dot > path.lastIndexOf('/') && runnableExtensions().has(path.slice(dot))) return true;
   return /\.(?:json|sql)$/.test(path) && !/^(?:probes|\.seam)\//.test(path);
 }
 

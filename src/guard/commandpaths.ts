@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { classify, resolveReal } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
 import type { Ctx } from '../types.ts';
-import { pathParts, readingsOf } from './commandtext.ts';
+import { attachedValue, pathParts, readingsOf, wordValue } from './commandtext.ts';
 import { protectedPlace } from './commandwhy.ts';
 
 /** Places a command may not name, not even as an argument of an allowed command. */
@@ -32,17 +32,35 @@ function basesOf(ref: boolean, text: string, cwd: string, ctx: Ctx): string[] {
   return ref && !FROM_HERE.test(text) ? [...new Set([repoTop(ctx.root), ctx.root])] : [cwd];
 }
 
-/** The first word that names a path in a protected place, in any reading of it, as the refusal says it; null if none does. */
+/**
+ * The first word that names a path in a protected place, in any reading of it, as the refusal says it; null if none does.
+ * The value stuck to a one-letter option counts as a path too (`-O.seam/x` is git reading an order file, R62).
+ */
 export function offLimits(words: string[], cwd: string, ctx: Ctx): string | null {
   for (const word of words) {
-    const parts = pathParts(word);
-    if (parts === null) continue;
-    for (const base of basesOf(parts.ref, parts.text, cwd, ctx)) {
-      for (const reading of readingsOf(parts.text)) {
-        const cls = classify(ctx, resolveReal(base, reading));
-        if (OFF_LIMITS.has(cls)) return protectedPlace(word, cls);
+    for (const named of [word, attachedValue(word)]) {
+      const parts = named === null ? null : pathParts(named);
+      if (parts === null) continue;
+      for (const base of basesOf(parts.ref, parts.text, cwd, ctx)) {
+        for (const reading of readingsOf(parts.text)) {
+          const cls = classify(ctx, resolveReal(base, reading));
+          if (OFF_LIMITS.has(cls)) return protectedPlace(word, cls);
+        }
       }
     }
   }
   return null;
+}
+
+/**
+ * Do any of these words write a path in a way the guard does not read as the place it names (R62)? `~+`, `~-` and `~name`
+ * are other folders than the home folder; git's `:N:path` (the index at a stage) and `:/path` (from the top) and a path after
+ * a ref that starts at a root (`HEAD:/x`) are written from somewhere else than the words say. Honest work does not need them.
+ */
+export function oddSpelling(words: string[]): boolean {
+  return words.some((word) => {
+    const value = wordValue(word) ?? '';
+    const parts = pathParts(word);
+    return /^~[^\\/]/.test(value) || /^:(?:[0-3]:|[\\/])/.test(value) || (parts !== null && parts.ref && /^[\\/]/.test(parts.text));
+  });
 }

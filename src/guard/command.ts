@@ -7,16 +7,19 @@
 //   5. so is anything that makes the words the guard sees differ from the words the shell passes on (R56): a character
 //      that is not ASCII (non-breaking spaces and curly quotes are word breaks and quotes to PowerShell), a comma in
 //      PowerShell (it joins words into one list), a backslash before `-`, `=`, a quote or a space in Bash (it is
-//      removed, so `\--output` is `--output`); and a command of more than 200 words, which is not checked word by word;
+//      removed, so `\--output` is `--output`); in PowerShell (5.1 quotes a word with a space badly, R61) a space or `"` in a
+//      word, a backslash at the end of a word or by a quote, `%` (also `--%`) and `@`; and a command of more than 200 words,
+//      which is not checked word by word;
 //   6. then the allowlist (commandrules.ts); anything not on it is refused, with what to do instead. Tests run only in
 //      the build and flip phases (R59);
-//   7. the words of an allowed command may not hold a wildcard (`* ? [`, R60: `.se?m` is `.seam`), and a path in a
+//   7. the words of an allowed command may not hold a wildcard (`* ? [`, R60: `.se?m` is `.seam`) or a path written
+//      another way than it reads (`~+`, `:N:path`, `:/path`, R62), and a path in a
 //      protected place is refused (commandpaths.ts). A refused command is told about its protected paths first.
 // What a command names also decides which seam project it belongs to (R41, in request.ts), so a command run
 // from outside a project that changes into one is judged by that project.
 import { roleOf } from '../lib/roles.ts';
 import type { Ctx, Decision, HookInput } from '../types.ts';
-import { offLimits } from './commandpaths.ts';
+import { oddSpelling, offLimits } from './commandpaths.ts';
 import { judge } from './commandrules.ts';
 import { scan } from './commandtext.ts';
 import * as why from './commandwhy.ts';
@@ -44,10 +47,33 @@ const asksBackground = (toolInput: Record<string, unknown> | undefined): boolean
   return asked !== undefined && asked !== null && asked !== false;
 };
 
-/** Why the words of this command may not be trusted to be the words the shell passes on (R56), or null. */
-function misleading(tool: string | undefined, command: string): string | null {
+/** A quote next to a backslash in the text of a command: Windows PowerShell does not escape a quote it puts around a word, so `\"` ends the word early. */
+const QUOTE_AND_BACKSLASH = /\\['"]|['"]\\/;
+/**
+ * A piece of a command between blanks that Windows PowerShell 5.1 reads as one word the way the guard does: no quote at all,
+ * or one quote at each end and none inside. It splits `'a'--output=x` into `a` and `--output=x`, where the guard sees one word.
+ */
+const ONE_WORD_TO_POWERSHELL = /^(?:[^'"]*|'[^'"]*'|"[^'"]*")$/;
+
+/**
+ * Windows PowerShell 5.1 (the PowerShell tool) hands a program its words with the old quoting (R61): a word that holds a
+ * space is wrapped in double quotes without escaping what is inside, so a `"` or a backslash at its end splits it into
+ * more words than the guard saw, and so does a quote closed in front of more text; `--%` splits what follows again and
+ * expands `%VAR%`; `@name` splats. None of it is needed for plain commands, so a word with a space or a `"`, a quote that
+ * is not around a whole word, a backslash at the end of a word or by a quote, any `%` and any `@` is refused.
+ */
+function powershellProblem(command: string, words: string[]): string | null {
+  if (command.includes(',')) return why.POWERSHELL_COMMA;
+  if (/[%@]/.test(command)) return why.POWERSHELL_EXPAND;
+  if (QUOTE_AND_BACKSLASH.test(command) || words.some((word) => /[\s"]/.test(word) || word.endsWith('\\'))) return why.POWERSHELL_QUOTING;
+  if (command.split(/[ \t]+/).some((piece) => !ONE_WORD_TO_POWERSHELL.test(piece))) return why.POWERSHELL_QUOTING;
+  return null;
+}
+
+/** Why the words of this command may not be trusted to be the words the shell passes on (R56, R61), or null. */
+function misleading(tool: string | undefined, command: string, words: string[]): string | null {
   if (/[^\u0000-\u007f]/.test(command)) return why.NON_ASCII;
-  if (tool === 'PowerShell' && command.includes(',')) return why.POWERSHELL_COMMA;
+  if (tool === 'PowerShell') return powershellProblem(command, words);
   if (tool === 'Bash' && BASH_ESCAPE.test(command)) return why.BASH_BACKSLASH;
   return null;
 }
@@ -65,12 +91,13 @@ export function decideCommand(input: HookInput, ctx: Ctx): Decision {
   const background = asksBackground(input.tool_input) || BACKGROUND_SPELLING.test(command) || segments.some(([first]) => BACKGROUND_COMMAND.test(first));
   if (background) return deny(why.BACKGROUND);
   if (NOT_SIMPLE.test(command) || segments.length !== 1) return deny(why.CHAINING);
-  const unsafe = misleading(input.tool_name, command);
+  const unsafe = misleading(input.tool_name, command, segments[0]);
   if (unsafe !== null) return deny(unsafe);
   if (!closed) return deny(why.OPEN_QUOTE);
   if (segments[0].length > MAX_WORDS) return deny(why.TOO_LONG);
   const judged = judge(segments[0], input.cwd, ctx);
   if (judged.ok && judged.args.some((arg) => /[*?[]/.test(arg))) return deny(why.WILDCARD);
+  if (judged.ok && oddSpelling(judged.args)) return deny(why.PATH_SPELLING);
   const touched = offLimits(judged.args, input.cwd, ctx);
   if (touched !== null) return deny(touched);
   return judged.ok ? ALLOW : deny(judged.reason);

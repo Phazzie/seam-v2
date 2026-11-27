@@ -50,10 +50,11 @@ function nodeCommand(words: string[], cwd: string, ctx: Ctx): Judged {
   return refuse(notOnList(words), words);
 }
 
-/** The first refused long option, with the reason; null if there is none. After a lone `--` the words are paths. */
+/** The first refused option (a long one, or `-L`, R62), with the reason; null if there is none. After a lone `--` the words are paths. */
 function refusedOption(args: string[]): { arg: string; why: string } | null {
   for (const arg of args) {
     if (arg === '--') return null;
+    if (/^-[A-Za-z0-9]*L/.test(arg)) return { arg, why: 'that option names a line range and a file in a way the guard cannot read as a place' };
     const name = arg.startsWith('--') ? arg.slice(2).split('=')[0] : '';
     const found = name === '' ? undefined : GIT_REFUSED.find(([long]) => long.startsWith(name));
     if (found !== undefined) return { arg, why: found[1] };

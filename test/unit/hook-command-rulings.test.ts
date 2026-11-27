@@ -54,3 +54,37 @@ describe('R59 in the hook: the tests run only in the build and flip phases', () 
     expectAllowed(await app.hook(run('PowerShell', 'npx vitest run test/total.test.ts')));
   });
 });
+
+describe('R61 and R62 in the hook', () => {
+  test('PowerShell: a word that Windows PowerShell 5.1 would split into more arguments', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('PowerShell', "git log -1 'a b\\' 'c --output=x'")), /a word with a space or a double quote/);
+    expectDenied(await app.hook(run('PowerShell', "git diff 'a'--output=x")), /a word with a space or a double quote/);
+    expectDenied(await app.hook(run('PowerShell', "git log -1 'x\\\" --output=.claude/settings.json'")), /a word with a space or a double quote/);
+  });
+  test('PowerShell: --% and %VAR% and @name', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('PowerShell', 'git diff --% %CLAUDE_JOB_DIR%')), /a %, a @ or --% is not allowed/);
+    expectDenied(await app.hook(run('PowerShell', 'git diff @HOME')), /a %, a @ or --% is not allowed/);
+  });
+  test('PowerShell: a plain command still runs', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectAllowed(await app.hook(run('PowerShell', 'git log -1')));
+  });
+  test('the stuck-on value of -O is path-checked, and the odd spellings are refused', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(run('Bash', 'git diff -O.seam/state.json')), /records/);
+    expectDenied(await app.hook(run('Bash', 'git show :0:.seam/state.json')), /that way of writing a path/);
+    expectDenied(await app.hook(run('Bash', 'git diff ~+/.seam/state.json')), /that way of writing a path/);
+    expectDenied(await app.hook(run('Bash', 'git log -L1,5:src/a.ts')), /names a line range/);
+  });
+  test('vitest.cpl, and a file with an extension from the machine\'s PATHEXT, are code the main AI cannot write', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(pre('Write', { file_path: app.abs('vitest.cpl'), content: 'x\n' })), /not in the plan/);
+    expectDenied(await app.hook(pre('Write', { file_path: app.abs('vitest.foo'), content: 'x\n' }), { env: { PATHEXT: '.COM;.EXE;.FOO' } }), /not in the plan/);
+  });
+  test('.gitattributes is a config file', async () => {
+    const app = await makeApp({ phase: 'build' });
+    expectDenied(await app.hook(pre('Write', { file_path: app.abs('.gitattributes'), content: '* filter=x\n' })), /config files are frozen/);
+  });
+});

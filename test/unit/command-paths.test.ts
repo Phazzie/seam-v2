@@ -27,7 +27,6 @@ describe('a protected place named by an allowed command is refused, whatever the
     ['whatever the letter case', () => '.SEAM/State.JSON', /records/],
     ['with backslashes', () => '.seam\\state.json', /records/],
     ['through ..', () => 'src/../.seam/state.json', /records/],
-    ['with the quotes taken off', () => ".se''am/state.json", /records/],
     ['with a backslash read as an escape', () => '.se\\am/state.json', /records/],
     ['in .claude', () => '.claude/settings.json', /protected/],
     ['CLAUDE.md', () => 'CLAUDE.md', /protected/],
@@ -48,6 +47,14 @@ describe('a protected place named by an allowed command is refused, whatever the
       expect(refusal).toMatch(TOUCH);
       expect(refusal).toMatch(reason);
     });
+  });
+
+  test('with the quotes taken off (Bash: PowerShell 5.1 refuses a quote inside a word, R61)', () => {
+    expect(whyNot(s, "git diff -- .se''am/state.json")).toMatch(/records/);
+    expect(whyNot(s, 'git diff -- ".se""am"/state.json')).toMatch(/records/);
+    expect(whyNot(s, 'git diff -- ".seam"/state.json')).toMatch(/records/);
+    expect(whyNot(s, 'git diff -- ".seam/state.json"')).toMatch(/records/);
+    expect(whyNot(s, 'git diff -- ".seam/state.json"', { tool: 'PowerShell' })).toMatch(/records/);
   });
 
   test('the command does not matter, and neither does where in it the path is', () => {

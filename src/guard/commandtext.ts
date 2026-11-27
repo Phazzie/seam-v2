@@ -76,14 +76,22 @@ export interface PathParts {
   ref: boolean;
 }
 
+/** What a word holds apart from an option's name: `--out=x` and `-Path:x` hold `x`, a plain word holds itself; null for an option without a value. */
+export function wordValue(word: string): string | null {
+  if (!word.startsWith('-')) return word;
+  return /^-{1,2}[^=:\s]+[=:](.*)$/.exec(word)?.[1] ?? null;
+}
+
+/** The value stuck to a one-letter option (`-O.seam/x`, git's order file) when it looks like a path or a file name; null if there is none (R62). */
+export function attachedValue(word: string): string | null {
+  const value = /^-[A-Za-z](.+)$/.exec(word)?.[1];
+  return value !== undefined && /[./\\~]/.test(value) ? value : null;
+}
+
 /** `pathText`, with whether the path came after a ref. A ref cannot hold a colon, so the path starts after the first one. */
 export function pathParts(word: string): PathParts | null {
-  let text = word;
-  if (text.startsWith('-')) {
-    const value = /^-{1,2}[^=:\s]+[=:](.*)$/.exec(text)?.[1];
-    if (value === undefined) return null;
-    text = value;
-  }
+  let text = wordValue(word);
+  if (text === null) return null;
   if (SCHEME.test(text) || /^\/[a-z?]$/i.test(text)) return null;
   const ref = !DRIVE.test(text) && text.includes(':');
   if (ref) text = text.slice(text.indexOf(':') + 1);
