@@ -1,8 +1,7 @@
 // R34: top-level code must not run anything at load. Each bypass is refused; each honest form is fine.
 import { describe, expect, test } from 'vitest';
-import { FILLED, check } from '../helpers/lockcheck.ts';
+import { FILLED, NOT_ALLOWED, check } from '../helpers/lockcheck.ts';
 
-const NOT_ALLOWED = "a statement outside any function isn't allowed";
 const withTop = (...lines: string[]): string => `${FILLED}\n${lines.join('\n')}\n`;
 /** An object whose valueOf, toString and getter all patch an export when something touches them. */
 const TRAP = "const o = { valueOf() { total = () => 0; return 1; }, toString() { total = () => 0; return 'x'; } };";

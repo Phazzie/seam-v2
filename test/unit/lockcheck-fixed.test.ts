@@ -23,7 +23,7 @@ describe('what an import stands for is fixed', () => {
   test_('the same name from a default import', text.replace('{ Money }', 'Money'), ['import Money was changed or removed']);
   test_('the same name from a namespace import', text.replace('{ Money }', '* as Money'), ['import Money was changed or removed']);
   test_('the import taken out and a type of the same name written instead', text.replace(IMPORT, 'type Money = string;'),
-    ['import Money was changed or removed', "the planned import of './money' was removed"]);
+    ['import Money was changed or removed', "'Money' is used by a locked signature, so a new declaration of it isn't allowed", "the planned import of './money' was removed"]);
   test_('quotes and spacing are not a change', text.replace(IMPORT, 'import type {Money} from "./money";'), []);
   test_('another name added from the same module', text.replace(IMPORT, "import type { Money, Extra } from './money';"), []);
   test_('a name given its own name again, in a new import', text.replace(IMPORT, "import type { Money as Money } from './money';"), []);

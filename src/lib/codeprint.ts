@@ -8,6 +8,7 @@ import { collectFixed } from './fixedprint.ts';
 import { analyzeSteps } from './stepprint.ts';
 import type { StepAnalysis } from './stepprint.ts';
 import { hash, normalize } from './text.ts';
+import { collectTypeRefs } from './typerefs.ts';
 
 export type CodeLock = Extract<FileLock, { kind: 'code' }>;
 
@@ -58,7 +59,7 @@ function moduleSpecifiers(sf: ts.SourceFile): string[] {
 /** Fingerprint a file that has been read already. */
 export function fingerprintSource(sf: ts.SourceFile, analysis: StepAnalysis = analyzeSteps(sf)): CodeLock {
   return {
-    kind: 'code', header: headerHash(sf.text), exports: collectExports(sf), fixed: collectFixed(sf),
+    kind: 'code', header: headerHash(sf.text), exports: collectExports(sf), fixed: collectFixed(sf), typeRefs: collectTypeRefs(sf),
     steps: analysis.steps, plannedImports: moduleSpecifiers(sf),
   };
 }

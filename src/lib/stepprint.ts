@@ -11,7 +11,7 @@ type BodyNode = (
 
 interface Scope { start: number; end: number; key: string }
 
-const isBodyNode = (node: ts.Node): node is BodyNode =>
+export const isBodyNode = (node: ts.Node): node is BodyNode =>
   (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
     || ts.isConstructorDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)
     || ts.isClassStaticBlockDeclaration(node)) && node.body !== undefined;
@@ -52,18 +52,27 @@ function holderLabel(node: ts.Node, sf: ts.SourceFile): string | null {
   return null;
 }
 
+const LOGICAL = new Set<ts.SyntaxKind>([ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken]);
+
 /**
- * An unnamed function or arrow handed straight to a call (`list.forEach((x) => { ... })`,
- * `useEffect(() => { ... })`), as a value in an object or array given to a call (`run({ fn: () => { ... } })`),
- * or as a JSX value (`onClick={() => { ... }}`).
+ * An unnamed function or arrow, or a method of an object literal, that is only handed on: straight to a
+ * call (`list.forEach((x) => { ... })`, `useEffect(() => { ... })`), as a value in an object or array given
+ * to a call (`run({ fn: () => { ... } })`, `useMutation({ onSuccess() { ... } })`), as one side of a
+ * conditional or logical expression given to a call (`run(flag ? () => { ... } : noop)`), or as a JSX
+ * value (`onClick={() => { ... }}`).
  */
 function isInlineCallback(node: ts.Node): boolean {
-  if (!(ts.isArrowFunction(node) || (ts.isFunctionExpression(node) && !node.name))) return false;
-  let child: ts.Node = node;
-  let at = node.parent;
+  const method = (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) && ts.isObjectLiteralExpression(node.parent);
+  if (!method && !(ts.isArrowFunction(node) || (ts.isFunctionExpression(node) && !node.name))) return false;
+  let child: ts.Node = method ? node.parent : node; // a method stands for the object it is in
+  let at = child.parent;
   for (;;) {
     if (isWrapper(at) || ts.isArrayLiteralExpression(at)) {
       child = at; // `(() => {...})`, `[() => {...}]`
+    } else if (ts.isConditionalExpression(at) && at.condition !== child) {
+      child = at; // `flag ? () => {...} : noop`
+    } else if (ts.isBinaryExpression(at) && LOGICAL.has(at.operatorToken.kind)) {
+      child = at; // `flag && (() => {...})`, `cb ?? (() => {...})`
     } else if (ts.isPropertyAssignment(at) && at.initializer === child) {
       child = at.parent; // `{ fn: () => {...} }`: on to the object, whatever it is part of
     } else if (ts.isJsxExpression(at)) {

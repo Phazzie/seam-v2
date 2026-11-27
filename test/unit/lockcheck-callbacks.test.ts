@@ -21,6 +21,40 @@ describe('a marker in a value handed to a call', () => {
   test('a callback in a call in an object given to a call', () => expect(check(moved('  run({ a: wrap(() => {\n    MARK\n  }) });\n'))).toEqual([]));
 });
 
+describe('a marker in a method of an object given to a call', () => {
+  test('a method shorthand', () => expect(check(moved('  useMutation({ onSuccess() {\n    MARK\n  } });\n'))).toEqual([]));
+  test('a method with an argument and another method after it', () =>
+    expect(check(moved('  useMutation({ onSuccess(data) {\n    MARK\n  }, onError() {} });\n'))).toEqual([]));
+  test('a getter', () => expect(check(moved('  run({ get v() {\n    MARK\n    return 1;\n  } });\n'))).toEqual([]));
+  test('a method in an object in an array', () => expect(check(moved('  run([{ go() {\n    MARK\n  } }]);\n'))).toEqual([]));
+  test('a method in an object given to new', () => expect(check(moved('  new Thing({ go() {\n    MARK\n  } });\n'))).toEqual([]));
+  test('a method in an object kept in a name is its own function', () =>
+    expect(check(moved('  const api = { go() {\n    MARK\n  } };\n'))).toEqual(expect.arrayContaining(STEP_2)));
+  test('a method in an object that is returned is its own function', () =>
+    expect(check(moved('  return { go() {\n    MARK\n  } };\n'))).toEqual(expect.arrayContaining(STEP_2)));
+  test('a method in an object that is only kept in a name, given to a call later', () =>
+    expect(check(moved('  const opts = { go() {\n    MARK\n  } };\n  run(opts);\n'))).toEqual(expect.arrayContaining(STEP_2)));
+});
+
+describe('a marker in a function chosen by a conditional or a logical operator and given to a call', () => {
+  test('the first choice of a conditional', () => expect(check(moved('  run(flag ? () => {\n    MARK\n  } : noop);\n'))).toEqual([]));
+  test('the second choice of a conditional', () => expect(check(moved('  run(flag ? noop : () => {\n    MARK\n  });\n'))).toEqual([]));
+  test('a conditional in an object given to a call', () => expect(check(moved('  run({ fn: flag ? () => {\n    MARK\n  } : noop });\n'))).toEqual([]));
+  test('a conditional in a conditional', () =>
+    expect(check(moved('  run(a ? (b ? () => {\n    MARK\n  } : noop) : noop);\n'))).toEqual([]));
+  test('&&', () => expect(check(moved('  run(flag && (() => {\n    MARK\n  }));\n'))).toEqual([]));
+  test('||', () => expect(check(moved('  run(cb || function () {\n    MARK\n  });\n'))).toEqual([]));
+  test('??', () => expect(check(moved('  run(cb ?? (() => {\n    MARK\n  }));\n'))).toEqual([]));
+  test('a conditional that is kept in a name is not handed on', () =>
+    expect(check(moved('  const h = flag ? () => {\n    MARK\n  } : noop;\n'))).toEqual(expect.arrayContaining(STEP_2)));
+  test('a logical operator that is kept in a name is not handed on', () =>
+    expect(check(moved('  const h = flag && (() => {\n    MARK\n  });\n'))).toEqual(expect.arrayContaining(STEP_2)));
+  test('a function in the test of a conditional is not handed on', () =>
+    expect(check(moved('  run((() => {\n    MARK\n  }) ? a : b);\n'))).toEqual(expect.arrayContaining(STEP_2)));
+  test('a function called at once inside a conditional is its own function', () =>
+    expect(check(moved('  run(flag ? (() => {\n    MARK\n  })() : noop);\n'))).toEqual(expect.arrayContaining(STEP_2)));
+});
+
 describe('a marker in a function that is kept in a name is not part of the function around it', () => {
   test('an object kept in a name', () => expect(check(moved('  const o = { fn: () => {\n    MARK\n  } };\n'))).toEqual(expect.arrayContaining(STEP_2)));
   test('an object that is returned', () => expect(check(moved('  return { fn: () => {\n    MARK\n  } };\n'))).toEqual(expect.arrayContaining(STEP_2)));

@@ -1,9 +1,8 @@
 // Nothing outside a function may run code when the file loads (R31, tightened by R34/R35/R36).
 import { describe, expect, test } from 'vitest';
 import { checkAgainstLock } from '../../src/lib/lockcheck.ts';
-import { FILLED, HEADER_END, check, edit, lockFor, plan } from '../helpers/lockcheck.ts';
+import { FILLED, HEADER_END, NOT_ALLOWED, check, edit, lockFor, plan } from '../helpers/lockcheck.ts';
 
-const NOT_ALLOWED = "a statement outside any function isn't allowed";
 const NO_NAMESPACES = "'declare global', 'declare module' and 'namespace' aren't allowed in app files";
 const withTop = (...lines: string[]): string => `${FILLED}\n${lines.join('\n')}\n`;
 
@@ -41,6 +40,12 @@ describe('code that runs while the file loads is refused', () => {
     ['a call on a built-in', "console.log('loaded');"],
     ['a class used as a value', 'const K = class {};'],
   ])('%s', (_name, code) => expect(check(withTop(code))).toContain(NOT_ALLOWED));
+
+  test('the message names the rule', () => {
+    expect(check(withTop('init();'))).toEqual([
+      "a statement outside any function isn't allowed: only literals, functions, objects or arrays of those, and memo/forwardRef imported from react are allowed at the top level",
+    ]);
+  });
 
   test('the message is given once, however many statements there are', () =>
     expect(check(withTop('init();', 'init();')).filter((p) => p === NOT_ALLOWED)).toHaveLength(1));

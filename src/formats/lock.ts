@@ -14,6 +14,8 @@ export const FileLockSchema = z.discriminatedUnion('kind', [
     // The things a signature can lean on, exported or not: every top-level type alias, interface, enum, class,
     // variable and import binding, keyed `type X`, `interface X`, `enum X`, `class X`, `const X` (or let, var), `import X`.
     fixed: z.record(z.string(), z.string()),
+    // The type names the signatures and fixed things lean on (`r: Response`, `Map<K, V>`, `extends B`), sorted.
+    typeRefs: z.array(z.string()),
     steps: z.record(z.string(), z.array(z.string())),
     plannedImports: z.array(z.string()),
   }),

@@ -158,7 +158,7 @@ describe('lock format', () => {
   const GOOD_LOCK = {
     version: 1,
     files: {
-      'src/pricing/total.ts': { kind: 'code', header: 'abc', exports: { total: 'h1' }, fixed: {}, steps: { total: ['Step 1: a'] }, plannedImports: [] },
+      'src/pricing/total.ts': { kind: 'code', header: 'abc', exports: { total: 'h1' }, fixed: {}, typeRefs: [], steps: { total: ['Step 1: a'] }, plannedImports: [] },
       'plan/plan.json': { kind: 'whole', hash: 'def' },
     },
   };

@@ -33,3 +33,7 @@ export function edit(from: string, to: string): string {
 export const withoutStep2 = (): string => edit(`  // Step 2: ${S2}\n`, '');
 /** The three marker lines of the filled total, as a function body. */
 export const MARKERS = [S1, S2, S3].map((text, i) => `  // Step ${i + 1}: ${text}`).join('\n');
+
+/** What the guard says about a statement outside every function (the rule is named in the message). */
+export const NOT_ALLOWED =
+  "a statement outside any function isn't allowed: only literals, functions, objects or arrays of those, and memo/forwardRef imported from react are allowed at the top level";

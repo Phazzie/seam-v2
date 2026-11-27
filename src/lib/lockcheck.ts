@@ -31,6 +31,22 @@ function fixedProblems(locked: CodeLock, now: CodeLock): string[] {
     .map(([key]) => `${key} was changed or removed`);
 }
 
+const NAMES_A_TYPE = /^(?:type|interface|class|enum|import) /;
+
+/**
+ * A new type or import binding can't take a name that a locked signature or fixed thing uses as a type:
+ * `handle(r: Response)` keeps its words when `interface Response {}` or `import { Response }` appears
+ * above it. A new one with a name nothing locked uses is fine.
+ */
+function shadowProblems(locked: CodeLock, now: CodeLock): string[] {
+  const used = new Set(locked.typeRefs);
+  const names = Object.keys(now.fixed)
+    .filter((key) => own(locked.fixed, key) === undefined && NAMES_A_TYPE.test(key))
+    .map((key) => key.slice(key.indexOf(' ') + 1));
+  return [...new Set(names.filter((name) => used.has(name)))].sort()
+    .map((name) => `'${name}' is used by a locked signature, so a new declaration of it isn't allowed`);
+}
+
 function stepProblems(locked: CodeLock, now: CodeLock, ambiguous: readonly string[]): string[] {
   return Object.entries(locked.steps).flatMap(([fn, wanted]) => {
     const have = own(now.steps, fn) ?? [];
@@ -72,6 +88,7 @@ export function checkAgainstLock(path: string, proposed: string, lock: Lock, pla
     ...(entry.header === now.header ? [] : ['the header was changed']),
     ...exportProblems(entry, now),
     ...fixedProblems(entry, now),
+    ...shadowProblems(entry, now),
     ...stepProblems(entry, now, steps.ambiguous),
     ...importProblems(key, entry, now, plan),
     ...topLevelProblems(sf),

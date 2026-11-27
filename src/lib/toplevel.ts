@@ -8,7 +8,7 @@ import { isBuiltInTypeName } from './globalnames.ts';
 import { classLoadsNothing, enumLoadsNothing, loadsNothing, reactNames } from './initializers.ts';
 import type { ReactNames } from './initializers.ts';
 
-export const NOT_ALLOWED = "a statement outside any function isn't allowed";
+export const NOT_ALLOWED = "a statement outside any function isn't allowed: only literals, functions, objects or arrays of those, and memo/forwardRef imported from react are allowed at the top level";
 export const NO_NAMESPACES = "'declare global', 'declare module' and 'namespace' aren't allowed in app files";
 export const builtInProblem = (name: string): string => `'${name}' is the name of a type TypeScript provides, so it can't be declared here`;
 /** Where a CommonJS file may put a value: `module.exports`, `exports.x`, `module.exports.x`, `exports['x']`. */
