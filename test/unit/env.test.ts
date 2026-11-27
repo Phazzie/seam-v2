@@ -5,7 +5,7 @@ import { GUARD_TIMEOUT_MS } from '../../src/config/limits.ts';
 
 describe('readGuardEnv', () => {
   test('nothing set: no folders, no switches, the full 20 seconds', () => {
-    expect(readGuardEnv({})).toEqual({ dataDir: null, pluginRoot: null, forceThrow: false, forceHang: false, timeoutMs: 20_000 });
+    expect(readGuardEnv({})).toEqual({ dataDir: null, pluginRoot: null, forceThrow: false, forceHang: false, forceInertHang: false, timeoutMs: 20_000 });
     expect(GUARD_TIMEOUT_MS).toBe(20_000);
   });
 
@@ -15,9 +15,13 @@ describe('readGuardEnv', () => {
   });
 
   test('the force switches are on only for exactly 1', () => {
-    expect(readGuardEnv({ SEAM_TEST_FORCE_THROW: '1', SEAM_TEST_FORCE_HANG: '1' })).toMatchObject({ forceThrow: true, forceHang: true });
+    expect(readGuardEnv({ SEAM_TEST_FORCE_THROW: '1', SEAM_TEST_FORCE_HANG: '1', SEAM_TEST_FORCE_INERT_HANG: '1' })).toMatchObject({
+      forceThrow: true, forceHang: true, forceInertHang: true,
+    });
     for (const value of ['0', 'true', '', ' 1', '11']) {
-      expect(readGuardEnv({ SEAM_TEST_FORCE_THROW: value, SEAM_TEST_FORCE_HANG: value })).toMatchObject({ forceThrow: false, forceHang: false });
+      expect(readGuardEnv({ SEAM_TEST_FORCE_THROW: value, SEAM_TEST_FORCE_HANG: value, SEAM_TEST_FORCE_INERT_HANG: value })).toMatchObject({
+        forceThrow: false, forceHang: false, forceInertHang: false,
+      });
     }
   });
 
@@ -32,8 +36,8 @@ describe('readGuardEnv', () => {
 
 describe('guardEnvVars', () => {
   test('keeps only what the guard reads, for the worker', () => {
-    const env = { CLAUDE_PLUGIN_DATA: 'd', CLAUDE_PLUGIN_ROOT: 'r', SEAM_TEST_FORCE_THROW: '1', SEAM_TEST_FORCE_HANG: '1', SEAM_TEST_TIMEOUT_MS: '9', PATH: '/bin', HOME: '/h' };
-    expect(guardEnvVars(env)).toEqual({ CLAUDE_PLUGIN_DATA: 'd', CLAUDE_PLUGIN_ROOT: 'r', SEAM_TEST_FORCE_THROW: '1', SEAM_TEST_FORCE_HANG: '1', SEAM_TEST_TIMEOUT_MS: '9' });
+    const env = { CLAUDE_PLUGIN_DATA: 'd', CLAUDE_PLUGIN_ROOT: 'r', SEAM_TEST_FORCE_THROW: '1', SEAM_TEST_FORCE_HANG: '1', SEAM_TEST_FORCE_INERT_HANG: '1', SEAM_TEST_TIMEOUT_MS: '9', PATH: '/bin', HOME: '/h' };
+    expect(guardEnvVars(env)).toEqual({ CLAUDE_PLUGIN_DATA: 'd', CLAUDE_PLUGIN_ROOT: 'r', SEAM_TEST_FORCE_THROW: '1', SEAM_TEST_FORCE_HANG: '1', SEAM_TEST_FORCE_INERT_HANG: '1', SEAM_TEST_TIMEOUT_MS: '9' });
     expect(guardEnvVars({ PATH: '/bin' })).toEqual({});
   });
 });

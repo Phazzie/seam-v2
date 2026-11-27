@@ -2,12 +2,12 @@
 // JSON on stdin. It prints a refusal as JSON, or nothing. A hook that crashes, is killed or runs out of
 // time does not stop the tool call (live checks c and d), so this file never lets that happen: the
 // main thread only reads stdin, keeps the clock and prints. The guard's work is done in a worker thread
-// (dist/hook-worker.mjs), which the main thread can stop when the time is up, whatever it is doing. A
-// call that cannot involve a seam project at all is answered here, with silence, without the worker.
+// (dist/hook-worker.mjs), which the main thread can stop when the time is up, whatever it is doing. The
+// worker's first step is the cheap check for a call that cannot involve a seam project (guard/inert.ts);
+// even that touches the file system, so it too runs under this clock and never on this thread.
 import { currentEnv, guardEnvVars, readGuardEnv } from './config/env.ts';
 import { raceDeadline } from './guard/deadline.ts';
-import { whySeamPossible } from './guard/inert.ts';
-import { internalError, refusal, SILENT, TOOK_TOO_LONG } from './guard/output.ts';
+import { internalError, refusal, TOOK_TOO_LONG } from './guard/output.ts';
 import type { HookEvent } from './guard/output.ts';
 import { makePrinter } from './guard/printer.ts';
 import { prepare, sniffEvent } from './guard/request.ts';
@@ -44,7 +44,6 @@ async function main(): Promise<void> {
   const ready = prepare(raw);
   if ('done' in ready) return finish(ready.done);
   knownEvent = ready.event;
-  if (whySeamPossible(ready.input, guard.dataDir) === null) return finish(SILENT);
   const workerUrl = new URL('./hook-worker.mjs', import.meta.url);
   const timeoutMs = Math.max(1, guard.timeoutMs - (Date.now() - started));
   finish(await supervise({ workerUrl, raw, env: guardEnvVars(env), input: ready.input, event: ready.event, timeoutMs }));

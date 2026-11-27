@@ -12,6 +12,10 @@ import { tempDir } from '../helpers/project.ts';
 const IMPORT = "import { parentPort } from 'node:worker_threads';\n";
 const STUBS = {
   answers: `${IMPORT}parentPort.postMessage({ kind: 'answer', out: { stdout: '', exitCode: 0 } });`,
+  notesThenAnswers: `${IMPORT}parentPort.postMessage({ kind: 'note', text: 'because' });
+parentPort.postMessage({ kind: 'answer', out: { stdout: '', exitCode: 0, note: 'and more' } });`,
+  notesThenSpins: `${IMPORT}parentPort.postMessage({ kind: 'note', text: 'because' });
+for (;;) { /* never gives the thread back */ }`,
   spinsQuietly: 'for (;;) { /* never gives the thread back */ }',
   spinsAfterSayingWhere: `${IMPORT}parentPort.postMessage({ kind: 'root', root: 'some-project' });\nfor (;;) { /* never gives the thread back */ }`,
   throws: "throw new Error('stub exploded');",
@@ -34,6 +38,13 @@ const denial = (reason: string): string =>
 describe('supervise', () => {
   test('prints what the worker answers (here: nothing to say)', async () => {
     expect(await run(stub('answers'))).toEqual({ stdout: '', exitCode: 0 });
+  });
+
+  test('what the worker says for stderr goes with its answer, and with a refusal made for it', async () => {
+    expect(await run(stub('notesThenAnswers'))).toEqual({ stdout: '', exitCode: 0, note: 'because; and more' });
+    const refused = await run(stub('notesThenSpins'));
+    expect(refused.stdout).toBe(denial('seam guard took too long to decide, so it was blocked to be safe'));
+    expect(refused).toMatchObject({ note: 'because' });
   });
 
   test('a worker that spins forever is cut off at the time limit with the refusal, not waited for', async () => {

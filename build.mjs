@@ -55,8 +55,10 @@ if (leftovers.length > 0) {
   process.exit(1);
 }
 
-// Fail the build if the hook or its worker would load the TypeScript parser on every run. Follow what an entry
-// imports at load time (not what it imports with `import()` later) and look for typescript inside.
+// Fail the build if the hook, or the first thing its worker loads, would pull in a big library on every run:
+// the TypeScript parser (only a code write needs it) or zod (only a call in a seam project needs it). The
+// main thread must stay tiny, and the worker must be able to answer "no seam project involved" without them.
+// Follow what an entry imports at load time (not what it imports with `import()` later) and look inside.
 function loadedAtStart(entry) {
   const seen = new Set();
   const todo = [entry];
@@ -71,13 +73,13 @@ function loadedAtStart(entry) {
   return [...seen];
 }
 for (const entry of ['dist/hook.mjs', 'dist/hook-worker.mjs']) {
-  const eager = loadedAtStart(entry).filter((file) =>
-    Object.keys(outputs[file].inputs).some((input) => input.includes('node_modules/typescript/')),
-  );
-  if (eager.length > 0) {
-    console.error(`${entry} would load the TypeScript parser on every run (it is in ${eager.join(', ')}).`);
-    console.error('Load whatever uses it with import() inside the function that needs it.');
-    process.exit(1);
+  for (const [name, folder] of [['the TypeScript parser', 'node_modules/typescript/'], ['zod', 'node_modules/zod/']]) {
+    const eager = loadedAtStart(entry).filter((file) => Object.keys(outputs[file].inputs).some((input) => input.includes(folder)));
+    if (eager.length > 0) {
+      console.error(`${entry} would load ${name} on every run (it is in ${eager.join(', ')}).`);
+      console.error('Load whatever uses it with import() inside the function that needs it.');
+      process.exit(1);
+    }
   }
 }
 

@@ -57,8 +57,12 @@ export function prepare(raw: string): Prepared {
   return { input: parsed.input, event: parsed.event };
 }
 
-/** The input fields that name a file or folder. `path` is Glob's and Grep's. */
-const PATH_FIELDS = ['file_path', 'notebook_path', 'path'] as const;
+/**
+ * The input fields that name a file or folder. `path` is Glob's and Grep's. This is the one list of what a call
+ * names: the cheap check (inert.ts) and the full lookup (project.ts) both get it from `targetsOf`, so a field
+ * added here (a Bash `cd` target, a Glob pattern) is looked at by both.
+ */
+export const PATH_FIELDS = ['file_path', 'notebook_path', 'path'] as const;
 
 /** What a path field holds: `null` counts as not there, like leaving the field out. */
 const fieldOf = (input: HookInput, field: (typeof PATH_FIELDS)[number]): unknown => input.tool_input?.[field] ?? undefined;

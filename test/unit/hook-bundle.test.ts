@@ -39,7 +39,8 @@ describe('each kind of call loads its decision in the real bundle', () => {
     const app = await makeApp({ phase: 'build' });
     const r = await app.hook(input(app));
     expectAllowed(r);
-    expect(r.stderr, 'a module that failed to load would say so here').toBe('');
+    // The only stderr a good run has is the one-line note of why a seam project may be involved.
+    expect(r.stderr, 'a module that failed to load would say so here').not.toMatch(/error|cannot find|ERR_/i);
   });
 });
 
@@ -50,7 +51,7 @@ describe('a folder that is not a seam project', () => {
     const r = await app.hook(pre('Write', { file_path: join(elsewhere, 'x.md'), content: 'x' }), { cwd: elsewhere, env: { SEAM_TEST_FORCE_THROW: '1' } });
     expectAllowed(r);
     expect(r.stdout).toBe('');
-    expect(r.stderr).toBe('');
+    expect(r.stderr, 'nothing to say about a folder that is not a seam project').toBe('');
     expect(readdirSync(elsewhere)).toEqual([]);
   });
 });

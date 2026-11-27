@@ -73,14 +73,16 @@ describe('the worker missing', () => {
     expectDenied(await run({ hook_event_name: 'PreToolUse', tool_name: 'Write', cwd: root, tool_input: 'x' }), /couldn't read the request/, { failClosed: true });
   });
 
-  test('a folder that is not a seam project is answered with silence by the main thread alone', async () => {
+  // The cheap "is a seam project involved" check touches the file system, so it runs in the worker, under the
+  // clock (R43), not on the main thread. With no worker nothing can be checked, so even a folder that is not
+  // a seam project gets the loud refusal: a broken install is not silent, and it is not a crash.
+  test('is a refusal for a folder that is not a seam project too, because even the cheap check needs the worker', async () => {
     const { run } = await pluginWithoutWorker();
     const elsewhere = tempDir();
     const target = { file_path: join(elsewhere, 'x.md'), content: 'x' };
     const r = await run({ hook_event_name: 'PreToolUse', tool_name: 'Write', cwd: elsewhere, tool_input: target });
-    expectAllowed(r);
-    expect(r.stderr).toBe('');
-    expectAllowed(await run({ hook_event_name: 'PostToolUse', tool_name: 'Bash', cwd: elsewhere, tool_input: { command: 'ls' }, tool_response: {} }));
+    expectDenied(r, /internal error/, { failClosed: true });
+    expect(r.exitCode).toBe(0);
   });
 });
 

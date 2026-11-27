@@ -15,11 +15,12 @@ import type { HookEvent, HookOutput } from './output.ts';
 
 /** What the worker is asked to do: decide a request, or count a refusal the main thread made. */
 export type WorkerJob =
-  | { kind: 'run'; raw: string; env: NodeJS.ProcessEnv }
+  | { kind: 'run'; raw: string; input: HookInput; env: NodeJS.ProcessEnv }
   | { kind: 'record'; root: string; dataDir: string; input: HookInput; event: HookEvent; reason: string };
 
-/** What the worker says back. `root` comes first, as soon as the project is known. */
+/** What the worker says back. `note` is for stderr; `root` comes as soon as the project is known. */
 export type WorkerMessage =
+  | { kind: 'note'; text: string }
   | { kind: 'root'; root: string }
   | { kind: 'answer'; out: HookOutput }
   | { kind: 'recorded'; failure: string };
@@ -102,12 +103,16 @@ function recordInWorker(url: URL, job: WorkerJob, ms: number): Promise<string> {
  * got far enough to say which it was.
  */
 export function supervise(s: Supervision): Promise<HookOutput> {
-  return new Promise((resolve) => {
+  return new Promise((resolveOutput) => {
     let root: string | null = null;
+    const notes: string[] = [];
     let settled = false;
     let worker: Worker;
+    /** Whatever the worker said for stderr along the way goes with the answer, however it ends. */
+    const resolve = (out: HookOutput): void =>
+      resolveOutput(notes.length === 0 ? out : { ...out, note: [...notes, out.note].filter((n) => n !== undefined).join('; ') });
     try {
-      worker = new Worker(s.workerUrl, { workerData: { kind: 'run', raw: s.raw, env: s.env } satisfies WorkerJob });
+      worker = new Worker(s.workerUrl, { workerData: { kind: 'run', raw: s.raw, input: s.input, env: s.env } satisfies WorkerJob });
     } catch (err) {
       resolve(refusal(s.event, internalError(err)));
       return;
@@ -140,7 +145,8 @@ export function supervise(s: Supervision): Promise<HookOutput> {
     }
 
     worker.on('message', (m: unknown) => {
-      if (isObject(m) && m.kind === 'root' && typeof m.root === 'string') root = m.root;
+      if (isObject(m) && m.kind === 'note' && typeof m.text === 'string') notes.push(m.text);
+      else if (isObject(m) && m.kind === 'root' && typeof m.root === 'string') root = m.root;
       else if (isObject(m) && m.kind === 'answer') answered(m.out);
       else fail(internalError('the guard worker sent a message the hook does not understand'));
     });
