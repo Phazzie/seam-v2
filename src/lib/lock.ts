@@ -144,15 +144,14 @@ function releaseAfterError(err: unknown, file: string, token: string): unknown {
 type NotAPromise<T> = T extends PromiseLike<unknown> ? never : unknown;
 
 /**
- * Run `fn` while holding the exclusive lock `.seam/.lock`, and let go of it afterwards, also when
+ * Run `fn` while holding the exclusive lock file `file`, and let go of it afterwards, also when
  * `fn` throws. Waits up to 5 s for another holder; a lock older than 30 s is treated as dead. If the
  * lock is found cleared or taken over (right after taking it, or when letting go), it throws a plain
  * error ("The seam lock was cleared ...") rather than carry on; when `fn` itself threw, that error
  * is `fn`'s, with the lock problem added to its message. `fn` must be synchronous (a Promise is a
- * type error) and `withLock` is not re-entrant. Throws if `.seam/` is missing.
+ * type error) and the lock is not re-entrant. Throws if the folder that should hold `file` is missing.
  */
-export function withLock<T>(root: string, fn: () => T & NotAPromise<T>, limits: Readonly<LockLimits> = LOCK_LIMITS): T {
-  const file = join(root, LOCK_PATH);
+export function withLockFile<T>(file: string, fn: () => T & NotAPromise<T>, limits: Readonly<LockLimits> = LOCK_LIMITS): T {
   const token = acquire(file, limits);
   let result: T;
   try {
@@ -162,4 +161,9 @@ export function withLock<T>(root: string, fn: () => T & NotAPromise<T>, limits: 
   }
   release(file, token);
   return result;
+}
+
+/** `withLockFile` on a project's own lock, `.seam/.lock`. Throws if `.seam/` is missing. */
+export function withLock<T>(root: string, fn: () => T & NotAPromise<T>, limits: Readonly<LockLimits> = LOCK_LIMITS): T {
+  return withLockFile(join(root, LOCK_PATH), fn, limits);
 }

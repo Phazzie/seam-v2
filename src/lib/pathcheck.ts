@@ -1,5 +1,5 @@
 // Checks the hook makes on a path before anything else looks at it.
-import { plainPath } from './realpath.ts';
+import { plainPath } from './winpath.ts';
 
 /** `\\?\` or `//?/` (and the `\\.\` device form): Windows turns its name tidying off after these. */
 const EXTENDED = /^[\\/]{2}[?.][\\/]/;
