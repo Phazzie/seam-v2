@@ -7,7 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { BUSY_CODES, errorCode, retryBusy } from './atomic.ts';
+import { BUSY_CODES, afterError, errorCode, removeFile, retryBusy } from './atomic.ts';
 import { outOfTime, pause, textOrNull, whenFree } from './lockwait.ts';
 import type { Budget, LockLimits } from './lockwait.ts';
 
@@ -39,11 +39,16 @@ function tryCreate(file: string, token: string): string {
   try {
     writeSync(fd, token);
   } catch (err) {
-    rmSync(file, { force: true }); // do not leave an empty lock that would block everyone for 30 s
-    throw err;
-  } finally {
-    closeSync(fd);
+    // Do not leave an empty lock that would block everyone for 30 s; close it first, as Windows will not let an open file go.
+    throw afterError(err, () => {
+      try {
+        closeSync(fd);
+      } finally {
+        removeFile(file);
+      }
+    });
   }
+  closeSync(fd);
   return '';
 }
 
@@ -115,21 +120,6 @@ function release(file: string, token: string): void {
   retryBusy('let go of the lock', () => rmSync(file, { force: true }));
 }
 
-/** `fn` threw: let go of the lock, and if that fails too, say so in the error that is thrown, which stays `fn`'s own. */
-function releaseAfterError(err: unknown, file: string, token: string): unknown {
-  try {
-    release(file, token);
-    return err;
-  } catch (problem) {
-    const note = (problem as Error).message;
-    if (err instanceof Error) {
-      err.message = `${err.message} (${note})`;
-      return err;
-    }
-    return new Error(`${String(err)} (${note})`, { cause: err });
-  }
-}
-
 /** Marks a function that returns a Promise as a type error: the lock is let go when `fn` returns, not when its Promise settles. */
 type NotAPromise<T> = T extends PromiseLike<unknown> ? never : unknown;
 
@@ -147,7 +137,7 @@ export function withLockFile<T>(file: string, fn: () => T & NotAPromise<T>, limi
   try {
     result = fn();
   } catch (err) {
-    throw releaseAfterError(err, file, token);
+    throw afterError(err, () => release(file, token)); // `fn` threw: let go of the lock, and if that fails too, say so in `fn`'s own error
   }
   release(file, token);
   return result;

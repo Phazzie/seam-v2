@@ -83,6 +83,7 @@ describe('waiting, and clearing a lock left by a crash', () => {
     // Whatever is refused is refused with a plain reason, never a crash, a raw file system error or another failure: the
     // "lock was cleared" error, or (on a machine so loaded that a racer waits out its 5 s) the plain "gave up" one.
     for (const message of errors) expect(message).toMatch(/lock was cleared|another seam hook or command has held .* so this one gave up/i);
+    expect(counter(root)).toBeGreaterThan(0); // a run in which every racer was refused would prove nothing
     if (errors.length === 0) expect(counter(root)).toBe(racers * 2);
     else expect(counter(root)).toBeLessThanOrEqual(racers * 2);
   });

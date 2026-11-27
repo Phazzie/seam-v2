@@ -38,6 +38,30 @@ export function retryBusy<T>(what: string, op: () => T): T {
   }
 }
 
+/**
+ * `err` was thrown and `cleanup` has to run before it goes on: run it, and return what to throw. That is `err` itself, or,
+ * when the cleanup failed too, `err` with the cleanup's problem added to its message (a value that is not an Error is wrapped,
+ * and kept as the cause). A failed cleanup never replaces the error that started it.
+ */
+export function afterError(err: unknown, cleanup: () => void): unknown {
+  try {
+    cleanup();
+    return err;
+  } catch (problem) {
+    const note = (problem as Error).message;
+    if (err instanceof Error) {
+      err.message = `${err.message} (${note})`;
+      return err;
+    }
+    return new Error(`${String(err)} (${note})`, { cause: err });
+  }
+}
+
+/** Remove a file that is no longer needed, waiting out a busy answer. (`rmSync`'s own `maxRetries` is ignored by Node unless the removal is recursive.) */
+export function removeFile(file: string): void {
+  retryBusy(`remove ${file}`, () => rmSync(file, { force: true }));
+}
+
 /** Replace `file` with `text` (or bytes) in one step. A reader sees the old content or the new content, never a mix. */
 export function atomicWrite(file: string, text: string | Uint8Array): void {
   const temp = `${file}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
@@ -45,7 +69,6 @@ export function atomicWrite(file: string, text: string | Uint8Array): void {
     writeFileSync(temp, text);
     retryBusy(`replace ${file}`, () => renameSync(temp, file));
   } catch (err) {
-    rmSync(temp, { force: true, maxRetries: 3, retryDelay: RETRY_PAUSE_MS });
-    throw err;
+    throw afterError(err, () => removeFile(temp));
   }
 }
