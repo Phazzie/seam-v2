@@ -14,18 +14,24 @@ export type PathClass =
 /**
  * `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as
  * code), and the files that make a tool run code or read its settings from the repo (R52): `.npmrc`, `.yarnrc`,
- * `.yarnrc.yml`, `.babelrc`, `.babelrc.*`, `babel.config.*`, `.swcrc`, `.env`, `.env.*`, `.nvmrc`, `.node-version`, `.tool-versions`.
+ * `.yarnrc.yml`, `.babelrc`, `.babelrc.*`, `babel.config.*`, `.swcrc`, `.env`, `.env.*`, `.nvmrc`, `.node-version`, `.tool-versions`;
+ * and (R54) `Makefile`, `.prettierrc*`, `.eslintrc*`, `bunfig.toml` and `pnpm-workspace.yaml`.
  */
-const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore|\.npmrc|\.yarnrc(?:\.yml)?|\.babelrc(?:\..+)?|babel\.config\..+|\.swcrc|\.env(?:\..+)?|\.nvmrc|\.node-version|\.tool-versions)$/i;
+const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore|\.npmrc|\.yarnrc(?:\.yml)?|\.babelrc(?:\..+)?|babel\.config\..+|\.swcrc|\.env(?:\..+)?|\.nvmrc|\.node-version|\.tool-versions|(?:gnu)?makefile|\.prettierrc.*|\.eslintrc.*|bunfig\.toml|pnpm-workspace\.yaml)$/i;
+/** Folders that run things at commit, build or editor time (R54): everything in one, at any depth, is a config file. */
+const CONFIG_DIRS = new Set(['.husky', '.github', '.vscode', '.devcontainer']);
 /** Folders only a build tool writes, when they sit at the top of the repo or the app (and `node_modules` anywhere). */
 const OUTPUT_DIRS = new Set(['dist', '.next', '.nuxt', '.output', '.svelte-kit', '.turbo', '.vercel', 'coverage', '.vite', '.parcel-cache']);
 const TEST_DIRS = new Set(['tests', 'test']);
 
-/** Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`; `.json` and `.sql` count, except under `probes/` and `.seam/`.) */
+/**
+ * Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`, the scripts `.sh .ps1 .bat .cmd .py`
+ * and the framework files `.vue .svelte .astro` (R54); `.json` and `.sql` count, except under `probes/` and `.seam/`.)
+ */
 export function isCodeFile(relPath: string): boolean {
   const parts = posix.normalize(relPath.replace(/\\/g, '/')).split('/').map(tidyPart).filter((part) => part !== '');
   const path = parts.join('/').toLowerCase();
-  if (/\.(?:[cm]?[jt]s|[jt]sx)$/.test(path)) return true;
+  if (/\.(?:[cm]?[jt]s|[jt]sx|sh|ps1|bat|cmd|py|vue|svelte|astro)$/.test(path)) return true;
   return /\.(?:json|sql)$/.test(path) && !/^(?:probes|\.seam)\//.test(path);
 }
 
@@ -39,6 +45,7 @@ const hasFirst = (views: View[], names: Set<string> | string): boolean =>
 export function inBuildOutput(inRepo: string, inApp: string | null): boolean {
   return inRepo.split('/').includes('node_modules') || [inRepo, inApp].some((p) => p !== null && OUTPUT_DIRS.has(first(p)));
 }
+const inConfigDir = (inRepo: string): boolean => inRepo.split('/').slice(0, -1).some((part) => CONFIG_DIRS.has(part.toLowerCase()));
 /** Does one of the listed plan paths (a file, or a folder and everything in it) cover this path? */
 const covered = (views: View[], entries: readonly string[]): boolean =>
   entries.some((entry) => views.some((v) => {
@@ -46,7 +53,7 @@ const covered = (views: View[], entries: readonly string[]): boolean =>
     return listedAs !== null && listedAs !== '' && (v.rel === listedAs || v.rel.startsWith(`${listedAs}/`));
   }));
 const insideDir = (dir: string, p: string): boolean => dir !== '' && rel(resolveReal(dir, '.'), p) !== null;
-/** `CLAUDE.md`, `AGENTS.md` and `AGENTS.project.md` at the top of the repo: the instructions the AI works under. */
+/** `CLAUDE.md`, `AGENTS.md` and `AGENTS.project.md` in any folder (R54): the instructions the AI works under. */
 const INSTRUCTIONS = /^(?:claude|agents(?:\.project)?)\.md$/i;
 
 const git = (root: string, args: string[]) =>
@@ -114,7 +121,7 @@ export function classify(ctx: Ctx, absPath: string): PathClass {
   const plan = ctx.plan;
 
   if (first(inRepo) === '.seam') return 'seam-records';
-  if (hasFirst(views, '.claude') || views.some((v) => INSTRUCTIONS.test(v.rel))) return 'claude-config';
+  if (hasFirst(views, '.claude') || INSTRUCTIONS.test(basename(inRepo))) return 'claude-config';
   if (first(inRepo) === 'plan') return 'plan';
   if (plan?.legacyRoot != null) {
     const old = resolveReal(root, plan.legacyRoot);
@@ -129,7 +136,7 @@ export function classify(ctx: Ctx, absPath: string): PathClass {
   if (hasFirst(views, 'fixtures') || views.some((v) => /^probes\/fixtures(?:\/|$)/.test(v.rel))) return 'fixtures';
   if (covered(views, plan?.generated ?? [])) return 'generated';
   // `.git/` holds git's own settings, hooks and exclude list: all of them can change what counts as code.
-  if (CONFIG_NAME.test(basename(inRepo)) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';
+  if (CONFIG_NAME.test(basename(inRepo)) || inConfigDir(inRepo) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';
   if (inBuildOutput(inRepo, inApp) || gitIgnores(root, inRepo)) return 'ignored';
   return isCodeFile(inApp ?? inRepo) ? 'app-code' : 'other-in-repo';
 }
