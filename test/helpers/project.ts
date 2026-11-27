@@ -1,28 +1,18 @@
 // Test helper: a throwaway seam project (a git repo holding the practice plan) and the guard
 // context for it. Used by the path and classification tests; nothing here runs the guard.
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { afterAll } from 'vitest';
 import { loadPlan, parsePlan } from '../../src/formats/plan.ts';
 import { parseState } from '../../src/formats/state.ts';
 import { classify, resolveReal } from '../../src/lib/paths.ts';
 import type { PathClass } from '../../src/lib/paths.ts';
 import type { Ctx } from '../../src/types.ts';
 import { FIXTURE } from './code.ts';
+import { scratchDir } from './scratch.ts';
 
-const temps: string[] = [];
-afterAll(() => {
-  for (const dir of temps) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
-});
-
-/** A new empty folder (real path, so it matches what the guard resolves), removed after the run. */
-export function tempDir(): string {
-  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'seam-paths-')));
-  temps.push(dir);
-  return dir;
-}
+/** A new empty folder (real path, so it matches what the guard resolves), removed when the test file ends. */
+export const tempDir = (): string => scratchDir('seam-paths-');
 
 /** Write `text` to `base/relPath`, making the folders. */
 export function put(base: string, relPath: string, text = 'x\n'): void {

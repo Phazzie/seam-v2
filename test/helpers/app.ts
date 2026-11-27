@@ -1,10 +1,8 @@
 // Test helper: builds a throwaway seam project and runs the REAL bundled hook (dist/hook.mjs)
 // against it as a child process, the way Claude Code does. Nothing here imports the guard.
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { afterAll } from 'vitest';
 import { loadLock } from '../../src/formats/lock.ts';
 import { loadPlan } from '../../src/formats/plan.ts';
 import { loadState } from '../../src/formats/state.ts';
@@ -16,6 +14,7 @@ import type { Ctx, HookInput, Phase } from '../../src/types.ts';
 import { FIXTURE, skeleton } from './code.ts';
 import { interpret, runNode } from './run.ts';
 import type { HookResult, ProcResult } from './run.ts';
+import { scratchDir } from './scratch.ts';
 
 export type { HookResult, ProcResult };
 
@@ -61,17 +60,6 @@ export interface App {
   writeRaw(rel: string, text: string): void;
 }
 
-const temps: string[] = [];
-afterAll(() => {
-  for (const dir of temps) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
-});
-
-function tempDir(prefix: string): string {
-  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
-  temps.push(dir);
-  return dir;
-}
-
 function put(base: string, rel: string, text: string): void {
   mkdirSync(dirname(join(base, rel)), { recursive: true });
   writeFileSync(join(base, rel), text);
@@ -86,9 +74,9 @@ function ctxOf(root: string, dataDir: string, pluginRoot: string): Ctx {
 }
 
 export async function makeApp(opts: AppOptions): Promise<App> {
-  const root = tempDir('seam-app-');
-  const dataDir = tempDir('seam-data-');
-  const pluginRoot = tempDir('seam-plugin-');
+  const root = scratchDir('seam-app-');
+  const dataDir = scratchDir('seam-data-');
+  const pluginRoot = scratchDir('seam-plugin-');
   cpSync(FIXTURE, root, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: root });
   // A stand-in plugin folder, so "a file under the plugin root" is a real file.
