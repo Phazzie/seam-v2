@@ -28,7 +28,9 @@ export const READS_ONLY: Partial<Record<Role, string>> = {
 export const NO_FILE = "this write doesn't name a file the guard can read";
 export const ONLY_BUILDERS = 'only builders write app code; the main AI plans and coordinates';
 export const IN_BUILD_OUTPUT = "node_modules and build output can't be written to (logic could hide there)";
-export const NO_LOCK = 'there is no lock yet, so the build has not started and no code can be written';
+export const OUTSIDE_MAIN_ONLY = 'only the main AI may write outside the project; a builder writes its own file, inside it';
+export const CONTRACTS_TS_ONLY = 'contracts hold TypeScript schemas only';
+export const NO_LOCK ='there is no lock yet, so the build has not started and no code can be written';
 
 export const notInPlan = (file: string): string => `${file} isn't in the plan: code that is not in the plan can't be written anywhere`;
 export const notYourTurn = (file: string): string => `it isn't this builder's turn for ${file}`;

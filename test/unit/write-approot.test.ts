@@ -36,21 +36,21 @@ beforeAll(async () => {
 });
 
 describe('an app folder inside the repo', () => {
-  test('the file is found by the plan (from the app folder) and the lock (from the repo root)', () => {
-    isAllowed(writes(s, 'app/src/config/env.ts', EMPTY, theBuilder(), ctx));
+  test('the file is found by the plan (from the app folder) and the lock (from the repo root)', async () => {
+    await isAllowed(writes(s, 'app/src/config/env.ts', EMPTY, theBuilder(), ctx));
   });
-  test('src/config/ is the app folder\'s: reading process.env there is allowed', () => {
-    isAllowed(writes(s, 'app/src/config/env.ts', READS_ENV, theBuilder(), ctx));
+  test('src/config/ is the app folder\'s: reading process.env there is allowed', async () => {
+    await isAllowed(writes(s, 'app/src/config/env.ts', READS_ENV, theBuilder(), ctx));
   });
-  test('and refused anywhere else in the app, with the file named as the plan spells it', () => {
+  test('and refused anywhere else in the app, with the file named as the plan spells it', async () => {
     const own = { ...ctx, state: { ...ctx.state, turn: { ...ctx.state.turn, file: 'app/src/pricing/env.ts' } } };
-    expect(reasonOf(writes(s, 'app/src/pricing/env.ts', READS_ENV, theBuilder(), own)))
+    expect(await reasonOf(writes(s, 'app/src/pricing/env.ts', READS_ENV, theBuilder(), own)))
       .toMatch(/^app\/src\/pricing\/env\.ts wasn't written: the file reads process\.env outside src\/config/);
   });
-  test('a file in the app folder that the plan does not list is not in the plan', () => {
-    expect(reasonOf(writes(s, 'app/src/other.ts', EMPTY, theBuilder(), ctx))).toMatch(/^app\/src\/other\.ts isn't in the plan/);
+  test('a file in the app folder that the plan does not list is not in the plan', async () => {
+    expect(await reasonOf(writes(s, 'app/src/other.ts', EMPTY, theBuilder(), ctx))).toMatch(/^app\/src\/other\.ts isn't in the plan/);
   });
-  test('the repo root is not the app folder: the same name outside it is not in the plan either', () => {
-    expect(reasonOf(writes(s, 'lib/config/env.ts', EMPTY, theBuilder(), ctx))).toMatch(/not in the plan/);
+  test('the repo root is not the app folder: the same name outside it is not in the plan either', async () => {
+    expect(await reasonOf(writes(s, 'lib/config/env.ts', EMPTY, theBuilder(), ctx))).toMatch(/not in the plan/);
   });
 });

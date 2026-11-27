@@ -41,35 +41,35 @@ describe('rule 1: protected places are refused for every role, with the reason s
     ['a config file the plan lists', () => abs('tsconfig.json'), /frozen/],
   ];
   describe.each(EVERYONE)('%s', (_who, who) => {
-    test.each(PLACES)('%s', (_what, path, reason) => {
-      expect(reasonOf(put(path(), who()))).toMatch(reason);
+    test.each(PLACES)('%s', async (_what, path, reason) => {
+      expect(await reasonOf(put(path(), who()))).toMatch(reason);
     });
   });
 
-  test('the old app (the plan names it) is protected', () => {
+  test('the old app (the plan names it) is protected', async () => {
     const ctx = { ...s.ctx, plan: { ...s.ctx.plan!, legacyRoot: 'old' } };
-    expect(reasonOf(put(abs('old/app.js'), asMain(), ctx))).toMatch(/old app.*protected/i);
+    expect(await reasonOf(put(abs('old/app.js'), asMain(), ctx))).toMatch(/old app.*protected/i);
   });
 
-  test('generated files (the plan lists them) are protected', () => {
+  test('generated files (the plan lists them) are protected', async () => {
     const ctx = { ...s.ctx, plan: { ...s.ctx.plan!, generated: ['gen'] } };
-    expect(reasonOf(put(abs('gen/out.ts'), asMain(), ctx))).toMatch(/generated.*protected/i);
+    expect(await reasonOf(put(abs('gen/out.ts'), asMain(), ctx))).toMatch(/generated.*protected/i);
   });
 
-  test('a different spelling of the same file gets the same answer', () => {
-    expect(reasonOf(put(abs('src/../.seam/State.json'), asMain()))).toMatch(/records/i);
-    expect(reasonOf(put(`${abs('.seam/state.json')}.`, asMain()))).toMatch(/records/i);
+  test('a different spelling of the same file gets the same answer', async () => {
+    expect(await reasonOf(put(abs('src/../.seam/State.json'), asMain()))).toMatch(/records/i);
+    expect(await reasonOf(put(`${abs('.seam/state.json')}.`, asMain()))).toMatch(/records/i);
   });
 
-  test('every refusal reads as a rule, not as the guard failing', () => {
-    expect(reasonOf(put(abs('.seam/state.json'), asMain()))).not.toMatch(/blocked to be safe/i);
+  test('every refusal reads as a rule, not as the guard failing', async () => {
+    expect(await reasonOf(put(abs('.seam/state.json'), asMain()))).not.toMatch(/blocked to be safe/i);
   });
 });
 
 describe('rule 1, the one exception: a checker writes its verdict', () => {
-  test('a checker may write .seam/verdicts/<name>.json', () => {
-    isAllowed(put(abs('.seam/verdicts/total.json'), asChecker()));
-    isAllowed(ask(s, 'Edit', { file_path: abs('.seam/verdicts/total.json'), old_string: 'a', new_string: 'b' }, asChecker()));
+  test('a checker may write .seam/verdicts/<name>.json', async () => {
+    await isAllowed(put(abs('.seam/verdicts/total.json'), asChecker()));
+    await isAllowed(ask(s, 'Edit', { file_path: abs('.seam/verdicts/total.json'), old_string: 'a', new_string: 'b' }, asChecker()));
   });
 
   test.each([
@@ -77,43 +77,63 @@ describe('rule 1, the one exception: a checker writes its verdict', () => {
     ['a folder inside verdicts', '.seam/verdicts/more/total.json'],
     ['a verdict that is not json', '.seam/verdicts/total.md'],
     ['a path that climbs out of verdicts', '.seam/verdicts/../state.json'],
-  ])('a checker may not write %s', (_what, rel) => {
-    expect(reasonOf(put(abs(rel), asChecker()))).toMatch(/records/i);
+  ])('a checker may not write %s', async (_what, rel) => {
+    expect(await reasonOf(put(abs(rel), asChecker()))).toMatch(/records/i);
   });
 
   test.each([
     ['the main AI', asMain],
     ['a builder', theBuilder],
-  ])('%s may not write a verdict', (_who, who) => {
-    expect(reasonOf(put(abs('.seam/verdicts/total.json'), who()))).toMatch(/records/i);
+  ])('%s may not write a verdict', async (_who, who) => {
+    expect(await reasonOf(put(abs('.seam/verdicts/total.json'), who()))).toMatch(/records/i);
   });
 });
 
-describe('rule 2: outside the repo, and not protected, is allowed', () => {
-  test.each(EVERYONE)('%s', (_who, who) => {
-    isAllowed(put(join(tmpdir(), 'seam-write-test', 'notes.txt'), who()));
+describe('rule 3 (R48): outside the repo, and not protected, only the main AI may write', () => {
+  const outside = (): string => join(tmpdir(), 'seam-write-test', 'notes.txt');
+  test('the main AI may', async () => {
+    await isAllowed(put(outside(), asMain()));
+  });
+  test('a builder may not, even on its turn', async () => {
+    expect(await reasonOf(put(outside(), theBuilder()))).toMatch(/only the main AI may write outside the project/);
+  });
+  test.each([
+    ['a checker', asChecker(), /verdict/i],
+    ['a describer', { agent_id: 'd-1', agent_type: 'seam-v2:describer' }, /describer.*read/i],
+    ['a surveyor', { agent_id: 's-1', agent_type: 'seam-v2:surveyor' }, /surveyor.*read/i],
+    ['a design pass', { agent_id: 'x-1', agent_type: 'seam-v2:design' }, /design pass/i],
+    ['another plugin agent', { agent_id: 'o-1', agent_type: 'other:thing' }, /read-only/i],
+    ['an agent with no type', { agent_id: 'u-1' }, /read-only/i],
+  ] as [string, Who, RegExp][])('%s may not, so the role gate comes before the outside allowance', async (_who, who, reason) => {
+    expect(await reasonOf(put(outside(), who))).toMatch(reason);
+  });
+  test('a checker still writes its verdict, inside the repo', async () => {
+    await isAllowed(put(abs('.seam/verdicts/total.json'), asChecker()));
+  });
+  test("a protected place outside the repo is protected for the main AI too", async () => {
+    expect(await reasonOf(put(join(s.app.pluginRoot, 'dist', 'hook.mjs'), asMain()))).toMatch(/plugin's own files/);
   });
 });
 
 describe('what a call names', () => {
-  test('a write that names no file is refused in words', () => {
-    expect(reasonOf(ask(s, 'Write', { content: 'x' }, asMain()))).toMatch(/doesn't name a file/);
-    expect(reasonOf(ask(s, 'Write', { file_path: '', content: 'x' }, asMain()))).toMatch(/doesn't name a file/);
+  test('a write that names no file is refused in words', async () => {
+    expect(await reasonOf(ask(s, 'Write', { content: 'x' }, asMain()))).toMatch(/doesn't name a file/);
+    expect(await reasonOf(ask(s, 'Write', { file_path: '', content: 'x' }, asMain()))).toMatch(/doesn't name a file/);
   });
 
-  test('a call that names two files is judged on both: one protected one is enough to refuse it', () => {
+  test('a call that names two files is judged on both: one protected one is enough to refuse it', async () => {
     const both = { file_path: abs('notes.md'), notebook_path: abs('.seam/state.json'), content: 'x' };
-    expect(reasonOf(ask(s, 'Write', both, asMain()))).toMatch(/records/i);
-    isAllowed(ask(s, 'Write', { file_path: abs('notes.md'), notebook_path: abs('docs.md'), content: 'x' }, asMain()));
+    expect(await reasonOf(ask(s, 'Write', both, asMain()))).toMatch(/records/i);
+    await isAllowed(ask(s, 'Write', { file_path: abs('notes.md'), notebook_path: abs('docs.md'), content: 'x' }, asMain()));
   });
 
-  test('NotebookEdit is judged by notebook_path', () => {
-    expect(reasonOf(ask(s, 'NotebookEdit', { notebook_path: abs('.claude/a.ipynb'), new_source: 'x' }, asMain()))).toMatch(/protected/i);
-    isAllowed(ask(s, 'NotebookEdit', { notebook_path: abs('analysis.ipynb'), new_source: 'x' }, asMain()));
+  test('NotebookEdit is judged by notebook_path', async () => {
+    expect(await reasonOf(ask(s, 'NotebookEdit', { notebook_path: abs('.claude/a.ipynb'), new_source: 'x' }, asMain()))).toMatch(/protected/i);
+    await isAllowed(ask(s, 'NotebookEdit', { notebook_path: abs('analysis.ipynb'), new_source: 'x' }, asMain()));
   });
 
-  test('a relative path is taken from the session folder', () => {
-    expect(reasonOf(ask(s, 'Write', { file_path: '.seam/state.json', content: 'x' }, asMain()))).toMatch(/records/i);
+  test('a relative path is taken from the session folder', async () => {
+    expect(await reasonOf(ask(s, 'Write', { file_path: '.seam/state.json', content: 'x' }, asMain()))).toMatch(/records/i);
   });
 });
 
@@ -125,14 +145,14 @@ describe('rule 5: roles that write nothing', () => {
     ['another plugin agent', { agent_id: 'o-1', agent_type: 'other:thing' }, /read-only/i],
     ['an agent with no type', { agent_id: 'u-1' }, /read-only/i],
   ];
-  test.each(NOBODY)('%s cannot write app code, docs or tests', (_who, who, reason) => {
+  test.each(NOBODY)('%s cannot write app code, docs or tests', async (_who, who, reason) => {
     for (const path of [TOTAL, 'notes.md', 'tests/a.test.ts', 'contracts/order.ts', 'plan/FEATURES.md']) {
-      expect(reasonOf(writes(s, path, 'x\n', who)), path).toMatch(reason);
+      expect(await reasonOf(writes(s, path, 'x\n', who)), path).toMatch(reason);
     }
   });
 
-  test('a checker writes only its verdict file', () => {
-    expect(reasonOf(writes(s, TOTAL, 'x\n', asChecker()))).toMatch(/verdict/i);
-    expect(reasonOf(writes(s, 'notes.md', 'x\n', asChecker()))).toMatch(/verdict/i);
+  test('a checker writes only its verdict file', async () => {
+    expect(await reasonOf(writes(s, TOTAL, 'x\n', asChecker()))).toMatch(/verdict/i);
+    expect(await reasonOf(writes(s, 'notes.md', 'x\n', asChecker()))).toMatch(/verdict/i);
   });
 });
