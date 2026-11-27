@@ -18,7 +18,7 @@ export const POWERSHELL_EXPAND = 'a %, a @ or --% is not allowed in a PowerShell
 export const POWERSHELL_QUOTING =
   'a word with a space or a double quote, or a backslash at the end of a word or next to a quote, is not allowed in a PowerShell command (Windows PowerShell hands the program a different list of words; quote a word only around the whole of it)';
 export const POWERSHELL_SPLITS =
-  'PowerShell splits this option at the dot; write it differently (Windows PowerShell 5.1 ends a one-dash option at its first . or :, so a word like -p.x or -a:x reaches the program as two words; use a double-dash option, or quote the whole word)';
+  'PowerShell may split this option at the dot or colon; write it differently (a one-dash word like -p.x or -a:x can reach the program as two words, which the guard cannot check; use a double-dash option, or quote the whole word)';
 export const POWERSHELL_EMPTY = 'an empty quoted word is not allowed in a PowerShell command (Windows PowerShell 5.1 drops it from the list of words)';
 export const PATH_SPELLING = 'that way of writing a path (:N:path, :/path, ~+, ~-, ~name) is not allowed; name the file plainly';
 export const TOO_LONG = 'this command is too long for the guard to check (over 200 words)';

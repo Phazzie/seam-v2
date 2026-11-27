@@ -48,9 +48,9 @@ describe('a protected place named by an allowed command is refused, whatever the
     });
   });
 
-  test('a PowerShell-style parameter value is a path (Bash; PowerShell 5.1 would split the word at its colon, R64)', () => {
+  test('a PowerShell-style parameter value is a path (Bash; PowerShell refuses the word, R64)', () => {
     expect(whyNot(s, 'git diff -- -Path:.seam/x')).toMatch(/records/);
-    expect(whyNot(s, 'git diff -- -Path:.seam/x', { tool: 'PowerShell' })).toMatch(/^PowerShell splits this option at the dot/);
+    expect(whyNot(s, 'git diff -- -Path:.seam/x', { tool: 'PowerShell' })).toMatch(/^PowerShell may split this option at the dot or colon/);
     expect(whyNot(s, "git diff -- '-Path:.seam/x'", { tool: 'PowerShell' })).toMatch(/records/);
   });
 

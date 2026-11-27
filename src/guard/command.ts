@@ -55,9 +55,12 @@ const QUOTE_AND_BACKSLASH = /\\['"]|['"]\\/;
  */
 const ONE_WORD_TO_POWERSHELL = /^(?:[^'"]*|'[^'"]*'|"[^'"]*")$/;
 /**
- * An unquoted word that starts with one dash (R64): Windows PowerShell 5.1 reads it as a parameter name and ends it at the
- * first `.` or `:`, so `-pp.seam/x` reaches the program as `-pp` and `.seam/x`, and `-a:--output=x` as `-a:` and `--output=x`.
- * A word that starts with two dashes, or is quoted, is passed whole.
+ * An unquoted word that starts with one dash (R64): Windows PowerShell 5.1 reads it as a parameter name and ends it at a `.`,
+ * so `-pp.seam/x` reaches the program as `-pp` and `.seam/x`. A word that starts with two dashes, or is quoted, is passed whole.
+ * A re-review measured what splits on 5.1: only a `.` and a `[`. A `:` does NOT split (`-a:--output=x` reaches the program
+ * whole), but the `:` is refused here as well. That is harmless (a plain command has no `:` in a one-dash word) and keeps the
+ * rule from depending on which characters a PowerShell version splits at. The `[` split is not matched here: a `[` in any
+ * word of an allowed command is already refused as a wildcard (step 7 in the list at the top of this file, `why.WILDCARD`).
  */
 const SPLIT_BY_POWERSHELL = /^-(?!-)[^'"]*[.:]/;
 
@@ -67,7 +70,8 @@ const SPLIT_BY_POWERSHELL = /^-(?!-)[^'"]*[.:]/;
  * more words than the guard saw, and so does a quote closed in front of more text; `--%` splits what follows again and
  * expands `%VAR%`; `@name` splats. None of it is needed for plain commands, so a word with a space or a `"`, a quote that
  * is not around a whole word, a backslash at the end of a word or by a quote, any `%` and any `@` is refused; so is an
- * unquoted one-dash word with a `.` or `:` in it (PowerShell splits it, R64), and an empty quoted word (PowerShell drops it).
+ * unquoted one-dash word with a `.` or `:` in it (PowerShell splits at the `.`, and the `:` is refused with it, R64), and an
+ * empty quoted word (PowerShell drops it).
  */
 function powershellProblem(command: string, words: string[]): string | null {
   if (command.includes(',')) return why.POWERSHELL_COMMA;

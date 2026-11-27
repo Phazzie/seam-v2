@@ -89,11 +89,11 @@ describe('R61 and R62 in the hook', () => {
   });
 });
 
-describe('R64 in the hook: PowerShell 5.1 splits an unquoted one-dash word, and drops an empty word', () => {
+describe('R64 in the hook: PowerShell 5.1 splits an unquoted one-dash word at a dot (a colon is refused too), and drops an empty word', () => {
   test.each(['git log -pp.seam/state.json', 'git diff -pO.claude/settings.json', 'git log -U3.seam/state.json', 'git log -a=x/.seam/state.json', 'git diff -a:--output=x'])(
     'PowerShell: %s', async (command) => {
       const app = await makeApp({ phase: 'build' });
-      expectDenied(await app.hook(run('PowerShell', command)), /PowerShell splits this option at the dot; write it differently/);
+      expectDenied(await app.hook(run('PowerShell', command)), /PowerShell may split this option at the dot or colon; write it differently/);
     },
   );
   test('PowerShell: an empty quoted word', async () => {

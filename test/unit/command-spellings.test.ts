@@ -51,8 +51,8 @@ describe('R62: the tilde forms other than ~ and ~/', () => {
 describe('R62: -L, which names a line range and a file in one word', () => {
   test.each(['git log -L:main:src/a.ts', 'git log -L5:src/a.ts', 'git log -nL5:src/a.ts', 'git log -pL:f:x', 'git log -L', 'git diff -L1'])('%s', (command) => {
     expect(whyNot(s, command)).toMatch(LINE_RANGE);
-    // PowerShell 5.1 splits the unquoted word at its colon (R64), which it is refused for first when it has one
-    expect(whyNot(s, command, { tool: 'PowerShell' })).toMatch(/names a line range|^PowerShell splits this option at the dot/);
+    // PowerShell refuses the unquoted word for its colon (R64; 5.1 does not split there, but the word is refused all the same), first when it has one
+    expect(whyNot(s, command, { tool: 'PowerShell' })).toMatch(/names a line range|^PowerShell may split this option at the dot or colon/);
   });
   test('with a range, in Bash (a comma is a list in PowerShell)', () => {
     expect(whyNot(s, 'git log -L1,5:.seam/state.json')).toMatch(/records|names a line range/); // the file in it is named, and protected
@@ -75,7 +75,7 @@ describe('R62: the value stuck to a one-letter option is a path too', () => {
     expect(refusal).toMatch(/^a command may not touch /);
     expect(refusal).toMatch(reason);
     // PowerShell 5.1 splits the unquoted word at its dot and the guard refuses it for that (R64); quoted, it is whole and path-checked
-    expect(whyNot(s, `git diff ${word}`, { tool: 'PowerShell' })).toMatch(/^PowerShell splits this option at the dot/);
+    expect(whyNot(s, `git diff ${word}`, { tool: 'PowerShell' })).toMatch(/^PowerShell may split this option at the dot or colon/);
     expect(whyNot(s, `git diff '${word}'`, { tool: 'PowerShell' })).toMatch(reason);
   });
   test.each([

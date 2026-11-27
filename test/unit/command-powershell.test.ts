@@ -91,20 +91,25 @@ describe('R61: plain commands still run in the PowerShell tool', () => {
   });
 });
 
-const SPLITS = /^PowerShell splits this option at the dot; write it differently/;
+const SPLITS = /^PowerShell may split this option at the dot or colon; write it differently/;
 
-describe('R64: Windows PowerShell 5.1 splits an unquoted one-dash word at its first . or :', () => {
+describe('R64: Windows PowerShell 5.1 splits an unquoted one-dash word at a . (a : is refused with it)', () => {
   test.each([
     'git log -pp.seam/state.json', 'git diff -pO.claude/settings.json', 'git log -U3.seam/state.json', 'git log -a=x/.seam/state.json',
-    // the colon does the same: `-a:--output=x` reaches git as `-a:` and `--output=x`
+    // 5.1 does not split at a colon (measured), but a colon is refused too: it is harmless, and keeps `-a:--output=x` out of reach
     'git diff -a:--output=x', 'git diff -a:--ext-diff', 'git log -p:--output=x', 'git diff -a:--no-index', 'git diff -O:.seam/state.json', 'git diff -a::x',
-    // any one-dash word with a dot or a colon, wherever it is
+    // any one-dash word with a dot or a colon, wherever it is (a `[` in a word is refused as a wildcard instead)
     'git diff -x.y', 'git diff -5.5', 'git log -n1.5', 'git diff -a.', 'git diff -a:', 'git diff -.x', 'git log -- -a.b', 'git diff HEAD -p.x', 'git log -ab.cd.ef',
     'npx vitest run -a.b', 'seam init -x.y',
   ])('%s', (command) => expect(whyNot(s, command, ps)).toMatch(SPLITS));
 
   test('the reason is plain words and says what to do', () => {
     expect(whyNot(s, 'git log -pp.seam/state.json', ps)).toMatch(/use a double-dash option, or quote the whole word/);
+  });
+
+  test('a [ in a one-dash word splits too on 5.1; it is refused by the wildcard rule, not this one', () => {
+    expect(whyNot(s, 'git log -a[b', ps)).toMatch(/wildcards/);
+    expect(whyNot(s, 'git log -a[b', ps)).not.toMatch(SPLITS);
   });
 
   test('a quoted word is passed whole by PowerShell, so it is the word the guard sees', () => {
