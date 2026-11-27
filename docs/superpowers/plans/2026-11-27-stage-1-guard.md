@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Plugin name `seam-v2`. Repo: `C:\Users\trap\plugin-src\seam-v2`. Never touch any app repo, including Street Royalty.
+- Plugin name `seam-v2`. All work happens in this repo (github.com/Phazzie/seam-v2). Never touch any app repo.
 - Hook matchers must name `PowerShell` explicitly: writes match `Edit|Write|MultiEdit|NotebookEdit`, commands match `Bash|PowerShell`, reads match `Read|Glob|Grep`.
 - The guard **fails closed**. Any crash, timeout or unreadable input becomes a deny or block with a plain reason, never an allow (15.9).
 - The guard never outputs `permissionDecision: "allow"`. It either denies or stays silent, so Claude Code's normal permissions still apply.

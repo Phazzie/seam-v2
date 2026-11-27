@@ -92,8 +92,7 @@ the walls.
 
 ## 3. Constraints
 
-- Plugin lives in `C:\Users\trap\plugin-src\seam-v2`, its own git repo. Never inside Street
-  Royalty or any app repo.
+- Plugin lives in its own git repo (github.com/Phazzie/seam-v2). Never inside an app repo.
 - Hooks must cover every write path: `Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell`
   (PowerShell must be named; the old kit missed it).
 - What Claude Code can and can't do (checked in its docs):
@@ -475,7 +474,7 @@ Each stage ends with its cheat tests green and one run on the practice app.
 ## 13. Calls Claude made (owner can override)
 
 - Build in stages, guard first (section 4).
-- Plugin at `C:\Users\trap\plugin-src\seam-v2`; Claude Code only; TypeScript, Zod, Vitest.
+- Plugin in its own repo (github.com/Phazzie/seam-v2); Claude Code only; TypeScript, Zod, Vitest.
 - At setup for an existing app, offer new branch or new repo; default new branch, new app in
   `seam-app/` on `seam/rebuild`.
 - Five test runs per builder try before a strike.
