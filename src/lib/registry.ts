@@ -1,11 +1,12 @@
 // Which folder is a seam project. A project is a folder with `.seam/state.json`. Every project is
 // also written into a list kept outside the repo (`<data folder>/projects.json`), so that deleting
 // `.seam/` cannot switch the guard off: a listed folder whose records are gone is "missing".
-import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { loadJson } from '../formats/read.ts';
 import { STATE_PATH } from '../formats/state.ts';
+import { atomicWrite } from './atomic.ts';
 import { withLockFile } from './lock.ts';
 import { staysOnNetwork } from './pathcheck.ts';
 import { resolveReal } from './realpath.ts';
@@ -76,7 +77,8 @@ export function findProject(cwd: string, dataDir: string): ProjectLookup {
 }
 
 /**
- * Add a project to the list (once). The file is replaced whole, so a reader never sees half of it. The
+ * Add a project to the list (once). The file is replaced whole (atomicWrite, which also waits out a Windows
+ * reader that has it open for a moment), so a reader never sees half of it and the write never fails on one. The
  * read, the check and the replace happen inside one lock in the data folder (`projects.lock`), so two
  * processes registering different projects at once both end up listed instead of one overwriting the other.
  * Throws if the list exists but cannot be read, rather than writing over it.
@@ -88,13 +90,6 @@ export function registerProject(root: string, dataDir: string): void {
   withLockFile(join(dataDir, REGISTRY_LOCK), () => {
     const projects = written(dataDir).map((listed) => spelled(listed) ?? listed); // a network entry stays as written
     if (projects.includes(entry)) return;
-    const temp = `${file}.${process.pid}.tmp`;
-    writeFileSync(temp, `${JSON.stringify({ projects: [...projects, entry] }, null, 2)}\n`);
-    try {
-      renameSync(temp, file);
-    } catch (err) {
-      rmSync(temp, { force: true });
-      throw err;
-    }
+    atomicWrite(file, `${JSON.stringify({ projects: [...projects, entry] }, null, 2)}\n`);
   });
 }

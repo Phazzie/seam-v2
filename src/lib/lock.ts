@@ -3,18 +3,18 @@
 // is old, so remove it" one atomic step, so the lock can in rare cases be removed from under a live
 // holder. Every holder therefore checks that the lock is still its own, right after taking it and
 // again before letting go, and fails loudly when it is not, instead of carrying on unguarded.
+// A file call that Windows answers with "busy" is waited out within the wait limit (see lockwait.ts).
 import { randomBytes } from 'node:crypto';
 import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { BUSY_CODES, errorCode, retryBusy, sleepMs } from './atomic.ts';
+import { BUSY_CODES, errorCode, retryBusy } from './atomic.ts';
+import { outOfTime, pause, textOrNull, whenFree } from './lockwait.ts';
+import type { Budget, LockLimits } from './lockwait.ts';
+
+export type { LockLimits } from './lockwait.ts';
 
 export const LOCK_PATH = '.seam/.lock';
 
-/** How long to wait for the lock, and how old a lock must be before it counts as left by a crash. */
-export interface LockLimits {
-  readonly waitMs: number;
-  readonly staleMs: number;
-}
 export const LOCK_LIMITS: Readonly<LockLimits> = Object.freeze({ waitMs: 5000, staleMs: 30_000 });
 
 /** A clearing guard is kept 10 times as long as a lock before it counts as left by a crash. */
@@ -70,59 +70,49 @@ function staleOwner(file: string, staleMs: number): string | null {
  * delete, and a new lock made in that gap is then removed. These need a crash plus a coincidence of
  * a few milliseconds. They cannot be closed with plain files, so holders detect them instead (see top).
  */
-function clearIfStale(file: string, staleMs: number): boolean {
-  const seen = staleOwner(file, staleMs);
+function clearIfStale(budget: Budget): boolean {
+  const { file, limits } = budget;
+  const seen = staleOwner(file, limits.staleMs);
   if (seen === null) return false;
   const guard = `${file}.break`;
   if (tryCreate(guard, String(process.pid)) !== '') {
-    if (staleOwner(guard, staleMs * GUARD_STALE_FACTOR) !== null) rmSync(guard, { force: true }); // its owner crashed long ago
+    if (staleOwner(guard, limits.staleMs * GUARD_STALE_FACTOR) !== null) whenFree(budget, () => rmSync(guard, { force: true })); // its owner crashed long ago
     return false; // someone else is clearing the lock: wait and try again
   }
   try {
-    if (staleOwner(file, staleMs) !== seen) return false; // changed while we took the guard
-    rmSync(file, { force: true, maxRetries: 5, retryDelay: 20 });
+    if (staleOwner(file, limits.staleMs) !== seen) return false; // changed while we took the guard
+    whenFree(budget, () => rmSync(file, { force: true }));
     return true;
   } finally {
-    rmSync(guard, { force: true, maxRetries: 5, retryDelay: 20 });
+    whenFree(budget, () => rmSync(guard, { force: true }));
   }
 }
 
 /** Is the lock file still the one we made? False if it is gone or holds someone else's token. */
 function stillOurs(file: string, token: string): boolean {
-  try {
-    return retryBusy('check the lock', () => readFileSync(file, 'utf8')) === token;
-  } catch (err) {
-    if (errorCode(err) === 'ENOENT') return false;
-    throw err;
-  }
+  return retryBusy('check the lock', () => textOrNull(file)) === token;
 }
 
 /** Wait for the lock and take it, and check it is still ours. Returns the token that marks it as ours. */
 function acquire(file: string, limits: LockLimits): string {
   const token = `${process.pid} ${new Date().toISOString()} ${randomBytes(6).toString('hex')}`;
-  const deadline = Date.now() + limits.waitMs;
+  const budget: Budget = { file, limits, deadline: Date.now() + limits.waitMs };
   for (;;) {
     const why = tryCreate(file, token);
     if (why === '') {
-      if (!stillOurs(file, token)) throw new Error(LOST_AT_START);
+      if (whenFree(budget, () => textOrNull(file)) !== token) throw new Error(LOST_AT_START);
       return token;
     }
-    if (clearIfStale(file, limits.staleMs)) continue; // a dead lock is gone: try at once
-    if (Date.now() >= deadline) {
-      const detail = why === 'EEXIST' ? '' : ` (the file system kept answering ${why})`;
-      throw new Error(
-        `Another seam hook or command has held ${file} for ${limits.waitMs / 1000} s, so this one gave up${detail}. ` +
-        `If none is running, the lock clears by itself once it is ${limits.staleMs / 1000} s old, or delete that file.`,
-      );
-    }
-    sleepMs(5 + Math.floor(Math.random() * 15)); // a different pause each time, so waiting processes do not move in step
+    if (clearIfStale(budget)) continue; // a dead lock is gone: try at once
+    if (Date.now() >= budget.deadline) throw outOfTime(budget, why);
+    pause();
   }
 }
 
 /** Let go of the lock. Throws if it is no longer ours (cleared while we ran), and then leaves it alone. */
 function release(file: string, token: string): void {
   if (!stillOurs(file, token)) throw new Error(LOST);
-  rmSync(file, { force: true, maxRetries: 5, retryDelay: 20 });
+  retryBusy('let go of the lock', () => rmSync(file, { force: true }));
 }
 
 /** `fn` threw: let go of the lock, and if that fails too, say so in the error that is thrown, which stays `fn`'s own. */

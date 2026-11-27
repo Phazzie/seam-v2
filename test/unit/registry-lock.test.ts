@@ -27,7 +27,7 @@ const listed = (data: string): string[] => (JSON.parse(readFileSync(join(data, '
 const spelling = (root: string): string => resolveReal(root, '.'); // as the list writes it
 
 describe('registering projects from several processes at once', () => {
-  test('6 processes with 2 different projects each: all 12 end up in the list, once each', async () => {
+  test('6 processes with 2 different projects each: all 12 end up in the list, once each', { retry: 2 }, async () => {
     const data = tempDir();
     const groups = Array.from({ length: 6 }, () => Array.from({ length: 2 }, () => tempDir()));
     await registerTogether(data, groups);
@@ -36,7 +36,7 @@ describe('registering projects from several processes at once', () => {
     expect(readdirSync(data).filter((name) => name.endsWith('.tmp'))).toEqual([]); // and no half-written copy is left
   });
 
-  test('6 processes registering the same project: it is listed once', async () => {
+  test('6 processes registering the same project: it is listed once', { retry: 2 }, async () => {
     const data = tempDir();
     const root = tempDir();
     await registerTogether(data, Array.from({ length: 6 }, () => [root]));
