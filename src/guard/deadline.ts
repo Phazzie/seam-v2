@@ -1,13 +1,12 @@
-// The guard's own time limit. Claude Code lets a tool call go ahead when a hook times out (live
-// check d), so the guard cannot wait to be killed: it answers by itself, with a refusal, first.
-// hooks.json gives the hook 30 seconds; the guard stops waiting at 20.
-
-export const GUARD_TIMEOUT_MS = 20_000;
+// The guard's own time limit (see config/limits.ts) and a way to hold work to it.
+export { GUARD_TIMEOUT_MS } from '../config/limits.ts';
 
 /**
  * Run `work` and give back its answer, or `onTimeout()` if it has not answered within `ms`. The
  * timer is stopped as soon as either happens, so it never keeps the process alive. `work` that is
- * still running at the deadline is left behind (the hook exits right after it answers).
+ * still running at the deadline is left behind (the hook exits right after it answers). This
+ * cannot cut off work that never gives the thread back; the hook runs its decisions in a worker
+ * thread for that (see supervisor.ts).
  */
 export async function raceDeadline<T>(work: () => Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
   let timer: NodeJS.Timeout | undefined;

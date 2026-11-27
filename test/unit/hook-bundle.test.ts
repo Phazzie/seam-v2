@@ -13,10 +13,15 @@ import { tempDir } from '../helpers/project.ts';
 
 const DIST = resolve(import.meta.dirname, '../../dist');
 
-describe('dist/ holds every chunk the hook loads', () => {
-  test('each chunk dist/hook.mjs names is there, and nothing but chunk files is in dist/chunks', () => {
-    const named = [...readFileSync(join(DIST, 'hook.mjs'), 'utf8').matchAll(/\.\/chunks\/([\w.-]+\.mjs)/g)].map((m) => m[1]);
-    expect(named.length, 'the decisions should be loaded from chunks, not bundled into hook.mjs').toBeGreaterThan(0);
+describe('dist/ holds every file the hook loads', () => {
+  test('the worker is next to the hook, and the hook names it', () => {
+    expect(existsSync(join(DIST, 'hook-worker.mjs'))).toBe(true);
+    expect(readFileSync(join(DIST, 'hook.mjs'), 'utf8')).toContain('hook-worker.mjs');
+  });
+
+  test.each(['hook.mjs', 'hook-worker.mjs'])('each chunk %s names is there, and nothing but chunk files is in dist/chunks', (entry) => {
+    const named = [...readFileSync(join(DIST, entry), 'utf8').matchAll(/\.\/chunks\/([\w.-]+\.mjs)/g)].map((m) => m[1]);
+    expect(named.length, 'the decisions should be loaded from chunks').toBeGreaterThan(0);
     for (const chunk of named) expect(existsSync(join(DIST, 'chunks', chunk)), `${chunk} is missing from dist/chunks`).toBe(true);
     expect(readdirSync(join(DIST, 'chunks')).every((f) => f.endsWith('.mjs'))).toBe(true);
   });
@@ -69,16 +74,17 @@ describe('a refusal printed by the real bundle', () => {
 });
 
 describe('a request that never finishes arriving', () => {
-  test('is answered with a refusal by the guard itself, inside its 20 seconds', async () => {
+  test('is answered with a refusal by the guard itself, when its time is up', async () => {
     const started = Date.now();
-    const child = spawn(process.execPath, [join(DIST, 'hook.mjs')], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const env = { ...process.env, SEAM_TEST_TIMEOUT_MS: '1500' };
+    const child = spawn(process.execPath, [join(DIST, 'hook.mjs')], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env });
     child.stdin.write('{"hook_event_name":"PreToolUse","tool_name":"Read",');
     let stdout = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk));
     const code = await new Promise<number | null>((done) => child.on('close', done));
     expect(code).toBe(0);
-    expect(Date.now() - started).toBeGreaterThan(15_000);
-    expect(Date.now() - started).toBeLessThan(25_000);
+    expect(Date.now() - started).toBeGreaterThan(1000);
+    expect(Date.now() - started).toBeLessThan(10_000);
     expect(JSON.parse(stdout)).toEqual({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',

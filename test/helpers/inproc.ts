@@ -23,7 +23,7 @@ export interface CallOptions {
 /** Send one request to `runHook` as if Claude Code had, from `opts.cwd` (the app's folder by default). */
 export function call(app: App, input: Input, opts: CallOptions = {}): Promise<HookOutput> {
   const raw = JSON.stringify({ cwd: opts.cwd ?? app.root, session_id: 'test-session', ...input });
-  return runHook(raw, opts.env ?? envFor(app), opts.timeoutMs);
+  return runHook(raw, opts.env ?? envFor(app), { timeoutMs: opts.timeoutMs });
 }
 
 /** What the hook printed, as JSON. */

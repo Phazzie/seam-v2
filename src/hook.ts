@@ -1,12 +1,14 @@
 // The hook entry point: Claude Code runs `node dist/hook.mjs` for every tool call, with the request as
-// JSON on stdin. It prints a refusal as JSON, or nothing. A hook that crashes or runs out of time does
-// not stop the tool call (live checks c and d), so this file never lets either happen: the whole run,
-// reading stdin included, has to answer inside the guard's own time limit, and any error is a refusal.
-import { currentEnv } from './config/env.ts';
-import { GUARD_TIMEOUT_MS, raceDeadline } from './guard/deadline.ts';
+// JSON on stdin. It prints a refusal as JSON, or nothing. A hook that crashes, is killed or runs out of
+// time does not stop the tool call (live checks c and d), so this file never lets that happen: the
+// main thread only reads stdin, keeps the clock and prints. The guard's work is done in a worker thread
+// (dist/hook-worker.mjs), which the main thread can stop when the time is up, whatever it is doing.
+import { currentEnv, guardEnvVars, readGuardEnv } from './config/env.ts';
+import { raceDeadline } from './guard/deadline.ts';
 import { internalError, refusal, TOOK_TOO_LONG } from './guard/output.ts';
 import type { HookOutput } from './guard/output.ts';
-import { runHook } from './guard/run.ts';
+import { prepare } from './guard/request.ts';
+import { supervise } from './guard/supervisor.ts';
 
 const started = Date.now();
 
@@ -36,10 +38,15 @@ async function main(): Promise<void> {
     process.stderr.write('seam guard: this is run by Claude Code, which sends the tool call on stdin.\n');
     process.exit(0);
   }
-  const raw = await raceDeadline<string | null>(readStdin, GUARD_TIMEOUT_MS, () => null);
+  const env = currentEnv();
+  const limit = readGuardEnv(env).timeoutMs;
+  const raw = await raceDeadline<string | null>(readStdin, limit, () => null);
   if (raw === null) return finish(refusal('PreToolUse', TOOK_TOO_LONG));
-  const left = Math.max(1, GUARD_TIMEOUT_MS - (Date.now() - started));
-  finish(await runHook(raw, currentEnv(), left));
+  const ready = prepare(raw);
+  if ('done' in ready) return finish(ready.done);
+  const workerUrl = new URL('./hook-worker.mjs', import.meta.url);
+  const timeoutMs = Math.max(1, limit - (Date.now() - started));
+  finish(await supervise({ workerUrl, raw, env: guardEnvVars(env), input: ready.input, event: ready.event, timeoutMs }));
 }
 
 main().catch((err: unknown) => finish(refusal('PreToolUse', internalError(err))));
