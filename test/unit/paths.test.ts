@@ -1,11 +1,11 @@
-import { mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { findProject, registerProject, rel, resolveReal } from '../../src/lib/paths.ts';
 import { project, put, tempDir } from '../helpers/project.ts';
 
 const WIN = process.platform === 'win32';
-const norm = (p: string): string => resolveReal(p, p);
+const norm = (p: string): string => resolveReal(p, '.');
 
 describe('findProject and registerProject', () => {
   test('no .seam anywhere -> none', () => {
@@ -49,11 +49,75 @@ describe('findProject and registerProject', () => {
     const saved: unknown = JSON.parse(readFileSync(join(a.data, 'projects.json'), 'utf8'));
     expect(saved).toEqual({ projects: [norm(a.root), norm(b.root)] });
   });
-  test('an unreadable registry is an error, not "no project"', () => {
+  describe('a project list that cannot be used (R17)', () => {
+    const warnings = (data: string): string => (existsSync(join(data, 'registry-warnings.log')) ? readFileSync(join(data, 'registry-warnings.log'), 'utf8') : '');
+
+    test('a corrupt list does not break a repo that is not a seam project: none, with a warning line', () => {
+      const { root, data } = project();
+      rmSync(join(root, '.seam'), { recursive: true });
+      put(data, 'projects.json', '{ not json');
+      expect(findProject(root, data)).toEqual({ kind: 'none' });
+      expect(warnings(data)).toMatch(/projects\.json could not be used, so .* was treated as not a seam project: projects\.json is unreadable/);
+      expect(warnings(data).endsWith('\n')).toBe(true);
+    });
+    test('every warning is one more line', () => {
+      const { root, data } = project();
+      rmSync(join(root, '.seam'), { recursive: true });
+      put(data, 'projects.json', '{ not json');
+      findProject(root, data);
+      findProject(root, data);
+      expect(warnings(data).trim().split('\n')).toHaveLength(2);
+    });
+    test('a seam project is found without reading the list at all: no error, no warning', () => {
+      const { root, data } = project();
+      put(data, 'projects.json', '{ not json');
+      expect(findProject(root, data)).toEqual({ kind: 'seam', root: norm(root) });
+      expect(warnings(data)).toBe('');
+    });
+    test('an entry that cannot be resolved makes the whole list unusable: none, with a warning', () => {
+      const { root, data } = project();
+      rmSync(join(root, '.seam'), { recursive: true });
+      registerProject(root, data);
+      put(data, 'projects.json', JSON.stringify({ projects: [norm(root), 'a\0b'] }));
+      expect(findProject(root, data)).toEqual({ kind: 'none' });
+      expect(warnings(data)).toMatch(/Could not work out/);
+    });
+    test.runIf(WIN)('a device-path entry is the same: none, with a warning', () => {
+      const { root, data } = project();
+      rmSync(join(root, '.seam'), { recursive: true });
+      put(data, 'projects.json', JSON.stringify({ projects: ['\\\\?\\Volume{01234567-89ab-cdef-0123-456789abcdef}\\x'] }));
+      expect(findProject(root, data)).toEqual({ kind: 'none' });
+      expect(warnings(data)).toMatch(/device path/);
+    });
+    test('a list of the wrong shape is unusable too', () => {
+      const { root, data } = project();
+      rmSync(join(root, '.seam'), { recursive: true });
+      put(data, 'projects.json', JSON.stringify({ projects: 'nope' }));
+      expect(findProject(root, data)).toEqual({ kind: 'none' });
+      expect(warnings(data)).toMatch(/projects\.json is invalid/);
+    });
+    test('a good list leaves no warnings file', () => {
+      const { root, data } = project();
+      registerProject(root, data);
+      rmSync(join(root, '.seam'), { recursive: true });
+      expect(findProject(root, data).kind).toBe('missing');
+      expect(warnings(data)).toBe('');
+    });
+    test('registering still refuses to write over a list it cannot read', () => {
+      const { root, data } = project();
+      put(data, 'projects.json', '{ not json');
+      expect(() => registerProject(root, data)).toThrow(/projects\.json is unreadable/);
+      expect(readFileSync(join(data, 'projects.json'), 'utf8')).toBe('{ not json');
+    });
+  });
+
+  test('a relative root is resolved once, from the current folder', () => {
     const { root, data } = project();
-    rmSync(join(root, '.seam'), { recursive: true });
-    put(data, 'projects.json', '{ not json');
-    expect(() => findProject(root, data)).toThrow(/projects\.json is unreadable/);
+    const relativeRoot = relative(process.cwd(), root);
+    registerProject(relativeRoot, data);
+    const saved: unknown = JSON.parse(readFileSync(join(data, 'projects.json'), 'utf8'));
+    expect(saved).toEqual({ projects: [norm(root)] });
+    expect(findProject(relativeRoot, data)).toEqual({ kind: 'seam', root: norm(root) });
   });
 });
 

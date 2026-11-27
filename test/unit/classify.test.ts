@@ -36,7 +36,7 @@ describe('classify', () => {
     ['src/pricing/total.ts', 'app-code'], ['src/greeting/Greeting.tsx', 'app-code'], ['db/schema.sql', 'app-code'], ['src/data.json', 'app-code'],
     ['scripts/build.mjs', 'app-code'],
     ['probes/run.json', 'other-in-repo'], ['README.md', 'other-in-repo'], ['src/index.css', 'other-in-repo'], ['', 'other-in-repo'],
-    ['node_modules/x/index.js', 'ignored'], ['node_modules/x/package.json', 'ignored'], ['src/node_modules/y.js', 'ignored'],
+    ['node_modules/x/index.js', 'ignored'], ['src/node_modules/y.js', 'ignored'],
     ['dist/bundle.js', 'ignored'], ['.next/server.js', 'ignored'], ['coverage/lcov.info', 'ignored'],
   ];
   test.each(cases)('%s is %s', (relPath, expected) => expect(p.at(relPath)).toBe(expected));

@@ -13,7 +13,7 @@ export type PathClass =
 
 /** `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as code). */
 const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore)$/i;
-/** Folders only a build tool writes, when they sit at the top of the repo or the app. */
+/** Folders only a build tool writes, when they sit at the top of the repo or the app (and `node_modules` anywhere). */
 const OUTPUT_DIRS = new Set(['dist', '.next', '.nuxt', '.output', '.svelte-kit', '.turbo', '.vercel', 'coverage', '.vite', '.parcel-cache']);
 const TEST_DIRS = new Set(['tests', 'test']);
 
@@ -37,24 +37,45 @@ const covered = (views: View[], entries: readonly string[]): boolean =>
     const listedAs = rel(v.base, resolve(v.base, entry));
     return listedAs !== null && listedAs !== '' && (v.rel === listedAs || v.rel.startsWith(`${listedAs}/`));
   }));
-const insideDir = (dir: string, p: string): boolean => dir !== '' && rel(resolveReal(dir, dir), p) !== null;
+const insideDir = (dir: string, p: string): boolean => dir !== '' && rel(resolveReal(dir, '.'), p) !== null;
+/** `CLAUDE.md`, `AGENTS.md` and `AGENTS.project.md` at the top of the repo: the instructions the AI works under. */
+const INSTRUCTIONS = /^(?:claude|agents(?:\.project)?)\.md$/i;
 
+const git = (root: string, args: string[]) =>
+  spawnSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+const prefixes = new Map<string, string | null>();
 const ignoreAnswers = new Map<string, boolean>();
 
+/** Where `root` sits inside its git repo, as `sub/` ('' when it is the top), or null if git cannot say. */
+function repoPrefix(root: string): string | null {
+  if (!prefixes.has(root)) {
+    const run = git(root, ['rev-parse', '--show-prefix']);
+    prefixes.set(root, run.status === 0 ? run.stdout.trim().replace(/\\/g, '/') : null);
+  }
+  return prefixes.get(root) ?? null;
+}
+
 /**
- * Does a `.gitignore` inside the repo ignore this path? Asked of git once per path and kept for the
- * rest of the run. Ignore rules from git's private exclude file or the user's global ignore file do
- * not count, because the AI can edit those without the repo noticing. A folder that is not a git
- * repo, or any git failure, counts as "not ignored", which keeps the path guarded.
+ * Does a `.gitignore` inside `root` ignore this path? Asked of git once per path and kept for the
+ * rest of the run. Ignore rules from git's private exclude file, the user's global ignore file, or a
+ * `.gitignore` above `root` (when the project is a folder inside a bigger repo) do not count,
+ * because the AI can edit those without the project noticing. A folder that is not a git repo, or
+ * any git failure, counts as "not ignored", which keeps the path guarded.
  */
 function gitIgnores(root: string, relPath: string): boolean {
   const key = `${root}\n${relPath}`;
   const known = ignoreAnswers.get(key);
   if (known !== undefined) return known;
-  const run = spawnSync('git', ['check-ignore', '-v', '--', relPath], { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 10_000 });
-  // `source:line:pattern<TAB>path`. Exit 1 is "not ignored"; 128 is "not a repo" or another git failure.
+  const run = git(root, ['check-ignore', '-v', '--', relPath]);
+  // `source:line:pattern<TAB>path`, with the source relative to the top of the git repo. Exit 1 is
+  // "not ignored"; 128 is "not a repo" or another git failure.
   const match = run.status === 0 ? /^((?:[a-z]:)?[^:]*):\d+:(.*)\t/i.exec(run.stdout) : null;
-  const ignored = match !== null && !isAbsolute(match[1]) && basename(match[1]) === '.gitignore' && !match[2].startsWith('!');
+  const source = match?.[1].replace(/\\/g, '/') ?? '';
+  let ignored = match !== null && !isAbsolute(source) && basename(source) === '.gitignore' && !match[2].startsWith('!');
+  if (ignored) {
+    const prefix = repoPrefix(root);
+    ignored = prefix !== null && source.toLowerCase().startsWith(prefix.toLowerCase());
+  }
   ignoreAnswers.set(key, ignored);
   return ignored;
 }
@@ -70,7 +91,7 @@ function isUserClaudeConfig(p: string): boolean {
  * caller did not clean up is judged by where it really points. The first matching rule wins.
  */
 export function classify(ctx: Ctx, absPath: string): PathClass {
-  const root = resolveReal(ctx.root, ctx.root);
+  const root = resolveReal(ctx.root, '.');
   const p = resolveReal(root, absPath);
   if (insideDir(ctx.dataDir, p)) return 'data-dir';
   if (insideDir(ctx.pluginRoot, p)) return 'plugin';
@@ -78,14 +99,14 @@ export function classify(ctx: Ctx, absPath: string): PathClass {
   const inRepo = rel(root, p);
   if (inRepo === null) return 'outside';
 
-  const appDir = resolveReal(root, ctx.appRoot || root);
+  const appDir = resolveReal(root, ctx.appRoot || '.');
   const inApp = rel(appDir, p);
   const views: View[] = [{ base: root, rel: inRepo }];
   if (inApp !== null && appDir !== root) views.push({ base: appDir, rel: inApp });
   const plan = ctx.plan;
 
   if (first(inRepo) === '.seam') return 'seam-records';
-  if (hasFirst(views, '.claude')) return 'claude-config';
+  if (hasFirst(views, '.claude') || views.some((v) => INSTRUCTIONS.test(v.rel))) return 'claude-config';
   if (first(inRepo) === 'plan') return 'plan';
   if (plan?.legacyRoot != null) {
     const old = resolveReal(root, plan.legacyRoot);
@@ -93,13 +114,14 @@ export function classify(ctx: Ctx, absPath: string): PathClass {
     const appInsideOld = appDir !== old && rel(old, appDir) !== null;
     if (rel(old, p) !== null && !(appInsideOld && inApp !== null)) return 'legacy';
   }
-  if (inRepo.split('/').includes('node_modules') || hasFirst(views, OUTPUT_DIRS)) return 'ignored';
+  // Every protected place comes before "ignored", so a node_modules folder inside tests/ or contracts/
+  // cannot turn them into something the guard lets through.
   if (hasFirst(views, TEST_DIRS)) return 'tests';
   if (hasFirst(views, 'contracts')) return 'contracts';
   if (hasFirst(views, 'fixtures') || views.some((v) => /^probes\/fixtures(?:\/|$)/.test(v.rel))) return 'fixtures';
   if (covered(views, plan?.generated ?? [])) return 'generated';
   // `.git/` holds git's own settings, hooks and exclude list: all of them can change what counts as code.
   if (CONFIG_NAME.test(basename(inRepo)) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';
-  if (gitIgnores(root, inRepo)) return 'ignored';
+  if (inRepo.split('/').includes('node_modules') || hasFirst(views, OUTPUT_DIRS) || gitIgnores(root, inRepo)) return 'ignored';
   return isCodeFile(inApp ?? inRepo) ? 'app-code' : 'other-in-repo';
 }

@@ -38,9 +38,11 @@ export interface Project {
   at: (relPath: string) => PathClass;
 }
 
-/** A seam project in a temp folder. `planChanges` override top-level plan fields; `git` makes it a repo. */
-export function project(planChanges: Record<string, unknown> = {}, git = true): Project {
-  const root = tempDir();
+/**
+ * A seam project in a temp folder. `planChanges` override top-level plan fields; `git` makes it a repo;
+ * `root` puts it somewhere else (for example inside a bigger repo).
+ */
+export function project(planChanges: Record<string, unknown> = {}, git = true, root = tempDir()): Project {
   const data = tempDir();
   cpSync(FIXTURE, root, { recursive: true });
   if (git) execFileSync('git', ['init', '-q'], { cwd: root });
