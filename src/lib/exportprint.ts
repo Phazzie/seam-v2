@@ -2,6 +2,7 @@
 // its body. A function's signature, a class's method signatures and an arrow function's parameters
 // and types are all in the hash; the code inside them is not.
 import ts from 'typescript';
+import { jsdocTypes } from './jsdocprint.ts';
 import { print, withoutBody, withoutFnBody } from './printing.ts';
 import { hash } from './text.ts';
 
@@ -25,13 +26,13 @@ export function importedNames(clause: ts.ImportClause): string[] {
 export function declared(stmt: ts.Statement, sf: ts.SourceFile): [string, string][] {
   if (ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt) || ts.isInterfaceDeclaration(stmt)
     || ts.isTypeAliasDeclaration(stmt) || ts.isEnumDeclaration(stmt) || ts.isModuleDeclaration(stmt)) {
-    return stmt.name ? [[stmt.name.text, print(withoutBody(stmt), sf)]] : [];
+    return stmt.name ? [[stmt.name.text, print(withoutBody(stmt), sf) + jsdocTypes(stmt, sf)]] : [];
   }
   if (ts.isVariableStatement(stmt)) {
     return stmt.declarationList.declarations.flatMap((d) => {
       const one = f.updateVariableDeclaration(d, d.name, d.exclamationToken, d.type, d.initializer && withoutFnBody(d.initializer));
       const list = f.createVariableDeclarationList([one], stmt.declarationList.flags & LET_CONST_USING);
-      const piece = print(f.createVariableStatement(stmt.modifiers, list), sf);
+      const piece = print(f.createVariableStatement(stmt.modifiers, list), sf) + jsdocTypes(stmt, sf);
       return bindingNames(d.name).map((name): [string, string] => [name, piece]);
     });
   }
@@ -120,12 +121,12 @@ export function collectExports(sf: ts.SourceFile): Record<string, string> {
       }
     } else if (ts.isExportAssignment(stmt)) {
       const value = withoutFnBody(stmt.expression);
-      add(stmt.isExportEquals ? 'export=' : 'default', print(f.updateExportAssignment(stmt, stmt.modifiers, value), sf), ...referenced(value, locals));
+      add(stmt.isExportEquals ? 'export=' : 'default', print(f.updateExportAssignment(stmt, stmt.modifiers, value), sf) + jsdocTypes(stmt, sf), ...referenced(value, locals));
     } else if (ts.isNamespaceExportDeclaration(stmt)) {
       add(`as namespace ${stmt.name.text}`, 'global');
     } else if (hasModifier(stmt, ts.SyntaxKind.ExportKeyword)) {
       if (hasModifier(stmt, ts.SyntaxKind.DefaultKeyword)) {
-        add('default', print(withoutBody(stmt), sf));
+        add('default', print(withoutBody(stmt), sf) + jsdocTypes(stmt, sf));
       } else {
         const values = ts.isVariableStatement(stmt) ? stmt.declarationList.declarations.flatMap((d) => (d.initializer ? [withoutFnBody(d.initializer)] : [])) : [];
         for (const [name, piece] of declared(stmt, sf)) add(name, piece, ...values.flatMap((v) => referenced(v, locals)));
@@ -134,7 +135,7 @@ export function collectExports(sf: ts.SourceFile): Record<string, string> {
       const cjs = commonJsAssignment(stmt);
       if (cjs) {
         const value = withoutFnBody(cjs.right);
-        add(cjs.left.getText(sf).replace(/\s+/g, ''), print(value, sf), ...referenced(value, locals));
+        add(cjs.left.getText(sf).replace(/\s+/g, ''), print(value, sf) + jsdocTypes(stmt, sf), ...referenced(value, locals));
       }
     }
   }

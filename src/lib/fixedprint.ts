@@ -6,6 +6,7 @@
 // bodies) and `import X` (what it is called in the source module, and which module).
 import ts from 'typescript';
 import { declared } from './exportprint.ts';
+import { jsdocTypes } from './jsdocprint.ts';
 import { print, withoutBody } from './printing.ts';
 import { hash } from './text.ts';
 
@@ -29,7 +30,7 @@ function pieces(stmt: ts.Statement, sf: ts.SourceFile): [string, string][] {
   if (ts.isTypeAliasDeclaration(stmt)) return [[`type ${stmt.name.text}`, print(stmt, sf)]];
   if (ts.isInterfaceDeclaration(stmt)) return [[`interface ${stmt.name.text}`, print(stmt, sf)]];
   if (ts.isEnumDeclaration(stmt)) return [[`enum ${stmt.name.text}`, print(stmt, sf)]];
-  if (ts.isClassDeclaration(stmt) && stmt.name) return [[`class ${stmt.name.text}`, print(withoutBody(stmt), sf)]];
+  if (ts.isClassDeclaration(stmt) && stmt.name) return [[`class ${stmt.name.text}`, print(withoutBody(stmt), sf) + jsdocTypes(stmt, sf)]];
   if (ts.isImportDeclaration(stmt)) return importBindings(stmt).map(([name, what]): [string, string] => [`import ${name}`, what]);
   if (ts.isImportEqualsDeclaration(stmt)) return [[`import ${stmt.name.text}`, print(stmt, sf)]];
   if (!ts.isVariableStatement(stmt)) return [];
