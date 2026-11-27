@@ -18,7 +18,7 @@ export function tidyPart(part: string): string {
 
 /** A host name or address in one comparable spelling (IPv6 literals included). */
 function canonicalHost(host: string): string {
-  let name = host.toLowerCase().replace(/\.$/, '');
+  let name = host.toLowerCase().replace(/\.$/, '').replace(/^\[(.*)\]$/, '$1');
   if (name.endsWith('.ipv6-literal.net')) {
     name = name.slice(0, -'.ipv6-literal.net'.length).replace(/-/g, ':').replace(/s\d+$/, '');
   }
@@ -46,7 +46,8 @@ function isLocalHost(host: string): boolean {
  * Windows spellings of an ordinary path, made ordinary: drop the `\\?\` and `\\.\` prefixes in front
  * of a drive or UNC path, and turn the admin-share alias of this machine's own drive
  * (`\\localhost\C$\x`, `\\<host name>\c$\x`, `\\127.0.0.1\C$\x`) into `C:\x`. Any other device path
- * is refused. Any other UNC path is left as it is (it is somewhere else).
+ * is refused. Any other UNC path is left as it is; realOrNearest refuses it unless it is on the
+ * same share as the root.
  */
 function plainPath(p: string): string {
   if (!WIN) return p;
@@ -86,12 +87,15 @@ function danglingLink(p: string): string | null {
 
 /**
  * The real location of `abs`; the part that does not exist yet is appended, tidied, as written.
- * A UNC path on any share but `home` is returned as written without touching the network: asking
- * an unreachable host takes 20 seconds, and asking a hostile one hands it the user's credentials.
+ * A UNC path on any share but `home` (the root's own) is refused before anything is looked up: it
+ * may be this machine under a name we do not know (`\\localhost\Users\...` is `C:\Users\...`), and
+ * asking an unreachable host takes 20 seconds while asking a hostile one hands it the user's credentials.
  */
 function realOrNearest(abs: string, home: string, hops = 0): string {
   const share = shareOf(abs);
-  if (share !== '' && share !== home) return abs;
+  if (share !== '' && share !== home) {
+    throw new Error(`The network path ${abs} cannot be checked, so it is refused. Use the drive path (C:\\...) instead.`);
+  }
   const tail: string[] = [];
   let cur = abs;
   for (;;) {
