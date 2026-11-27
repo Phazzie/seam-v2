@@ -26,11 +26,20 @@ function knownFiles(plan: Plan, named: readonly string[]): Set<string> {
   return found;
 }
 
-/** Is `spec`, imported by the file at `path` (from the repo root), something the plan allows? */
+/** `./x`, `../x`, `.` and `..`: a path from the importing file. Anything else is a package. */
+const RELATIVE = /^\.\.?(?:\/|$)/;
+
+/**
+ * Is `spec`, imported by the file at `path` (from the repo root), something the plan allows? A backslash
+ * is refused everywhere (the loader may read it as a slash), and so is a package path with an empty, `.`
+ * or `..` part or an escape (`react/../lodash` names a package other than `react`), so no path can
+ * walk out of the package the plan allows.
+ */
 export function importAllowed(spec: string, path: string, plan: Plan): boolean {
+  if (spec.includes('\\')) return false;
   const own = plan.seams.flatMap((s) => s.files).find((f) => posix.normalize(f.path) === path || posix.join(plan.appRoot, f.path) === path);
   const named = own?.imports ?? [];
-  if (named.includes(spec)) return true;
-  if (spec.startsWith('.')) return knownFiles(plan, named).has(withoutExtension(posix.join(posix.dirname(path), spec)));
-  return plan.packages.includes(spec) || plan.packages.includes(packageName(spec));
+  if (RELATIVE.test(spec)) return knownFiles(plan, named).has(withoutExtension(posix.join(posix.dirname(path), spec)));
+  if (spec.split('/').some((part) => part === '' || part === '.' || part === '..' || part.includes('%'))) return false;
+  return named.includes(spec) || plan.packages.includes(spec) || plan.packages.includes(packageName(spec));
 }

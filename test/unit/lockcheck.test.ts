@@ -1,25 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import type { Lock } from '../../src/formats/lock.ts';
-import { fingerprintCode } from '../../src/lib/fingerprint.ts';
 import { checkAgainstLock } from '../../src/lib/lockcheck.ts';
-import { FIXTURE, TOTAL, planFile, skeleton, total } from '../helpers/code.ts';
-import { loadPlan } from '../../src/formats/plan.ts';
-
-const P = TOTAL;
-const plan = loadPlan(FIXTURE)!;
-const { seam, file } = planFile(TOTAL);
-const FILLED = total();
-const lockOf = (text: string): Lock => ({ version: 1, files: { [P]: fingerprintCode(P, text) } });
-const lock = lockOf(skeleton(seam, file));
-const check = (proposed: string, against = lock, using = plan): string[] => checkAgainstLock(P, proposed, against, using);
-
-/** `FILLED` with `from` replaced by `to`; fails the test if `from` isn't in it. */
-function edit(from: string, to: string): string {
-  expect(FILLED, `the sample has no "${from}" to change`).toContain(from);
-  return FILLED.replace(from, to);
-}
-const [S1, S2, S3] = file.steps;
-const HEADER_END = ' */\n';
+import { TOTAL, skeleton, total } from '../helpers/code.ts';
+import { FILLED, HEADER_END, P, S1, S2, S3, check, edit, file, lock, lockOf, plan, seam } from '../helpers/lockcheck.ts';
 
 describe('what a builder may do', () => {
   test('filling the body is fine', () => expect(check(FILLED)).toEqual([]));
@@ -34,11 +16,11 @@ describe('what a builder may do', () => {
   test('a helper with its own step markers is fine', () =>
     expect(check(`${FILLED}\nfunction h() {\n  // Step 1: help\n  return 1;\n}`)).toEqual([]));
   test('importing a package the plan lists is fine', () => {
-    expect(check(edit(HEADER_END, `${HEADER_END}import { useMemo } from 'react';\nvoid useMemo;\n`))).toEqual([]);
+    expect(check(edit(HEADER_END, `${HEADER_END}import { useMemo } from 'react';\n`))).toEqual([]);
   });
   test('importing a planned file is fine, with or without its extension', () => {
     for (const spec of ['../greeting/Greeting', '../greeting/Greeting.tsx', '../greeting/Greeting.js']) {
-      expect(check(edit(HEADER_END, `${HEADER_END}import { Greeting } from '${spec}';\nvoid Greeting;\n`)), spec).toEqual([]);
+      expect(check(edit(HEADER_END, `${HEADER_END}import { Greeting } from '${spec}';\n`)), spec).toEqual([]);
     }
   });
   test('a planned import that is still there is fine', () => {
@@ -113,7 +95,7 @@ describe('steps', () => {
   test('a marker renumbered', () => expect(check(edit('Step 3:', 'Step 4:'))).toEqual(at(3)));
   test('a marker turned into a block comment', () => expect(check(edit(`// Step 2: ${S2}`, `/* Step 2: ${S2} */`))).toEqual([...at(2), ...at(3)]));
   test('a marker in a string does not count as the marker', () =>
-    expect(check(edit(`// Step 2: ${S2}`, `const s = "// Step 2: ${S2}";void s;`))).toEqual([...at(2), ...at(3)]));
+    expect(check(edit(`// Step 2: ${S2}`, `const s = "// Step 2: ${S2}";`))).toEqual([...at(2), ...at(3)]));
   test('a marker duplicated', () =>
     expect(check(edit(`  // Step 3: ${S3}\n`, `  // Step 3: ${S3}\n  // Step 3: ${S3}\n`))).toEqual(["step 4 in total isn't in the plan"]));
   test('a marker added', () =>
@@ -141,7 +123,7 @@ describe('steps', () => {
     expect(check(edit('function total', 'function sum'))).toEqual(
       expect.arrayContaining(['step 1 in total was changed or removed', 'step 3 in total was changed or removed'])));
   test('a marker moved into a second function with the same name is still caught', () => {
-    const decoy = `const o = { total() {\n  // Step 2: ${S2}\n} };\nvoid o;\n`;
+    const decoy = `const o = { total() {\n  // Step 2: ${S2}\n} };\n`;
     const moved = `${decoy}${edit(`  // Step 2: ${S2}\n`, '')}`;
     expect(check(moved)).toContain('step 2 in total was changed or removed');
   });
@@ -150,25 +132,25 @@ describe('steps', () => {
 describe('imports', () => {
   const withImport = (line: string): string => edit(HEADER_END, `${HEADER_END}${line}\n`);
   test('a package that is not in the plan', () =>
-    expect(check(withImport("import _ from 'lodash';\nvoid _;"))).toEqual(["import of 'lodash' isn't in the plan"]));
+    expect(check(withImport("import _ from 'lodash';"))).toEqual(["import of 'lodash' isn't in the plan"]));
   test('a deep import of a package that is not in the plan', () =>
-    expect(check(withImport("import f from 'lodash/fp';\nvoid f;"))).toEqual(["import of 'lodash/fp' isn't in the plan"]));
+    expect(check(withImport("import f from 'lodash/fp';"))).toEqual(["import of 'lodash/fp' isn't in the plan"]));
   test('a deep import of a package that is in the plan', () =>
-    expect(check(withImport("import { jsx } from 'react/jsx-runtime';\nvoid jsx;"))).toEqual([]));
+    expect(check(withImport("import { jsx } from 'react/jsx-runtime';"))).toEqual([]));
   test('a Node module', () =>
-    expect(check(withImport("import * as fs from 'node:fs';\nvoid fs;"))).toEqual(["import of 'node:fs' isn't in the plan"]));
+    expect(check(withImport("import * as fs from 'node:fs';"))).toEqual(["import of 'node:fs' isn't in the plan"]));
   test('a file that is not planned', () =>
-    expect(check(withImport("import { x } from './secret';\nvoid x;"))).toEqual(["import of './secret' isn't in the plan"]));
+    expect(check(withImport("import { x } from './secret';"))).toEqual(["import of './secret' isn't in the plan"]));
   test('a planned file name reached from the wrong folder', () =>
-    expect(check(withImport("import { x } from './Greeting';\nvoid x;"))).toEqual(["import of './Greeting' isn't in the plan"]));
+    expect(check(withImport("import { x } from './Greeting';"))).toEqual(["import of './Greeting' isn't in the plan"]));
   test('a package named only in this file entry of the plan is fine', () => {
     const named = { ...plan, seams: plan.seams.map((s) => ({ ...s, files: s.files.map((f) => (f.path === P ? { ...f, imports: ['left-pad'] } : f)) })) };
-    expect(check(withImport("import l from 'left-pad';\nvoid l;"), lock, named)).toEqual([]);
+    expect(check(withImport("import l from 'left-pad';"), lock, named)).toEqual([]);
   });
   test('a file named by path in this file entry of the plan is fine, spelled any way that reaches it', () => {
     const named = { ...plan, seams: plan.seams.map((s) => ({ ...s, files: s.files.map((f) => (f.path === P ? { ...f, imports: ['contracts/api.ts'] } : f)) })) };
-    expect(check(withImport("import { A } from '../../contracts/api';\nvoid A;"), lock, named)).toEqual([]);
-    expect(check(withImport("import { A } from '../../contracts/other';\nvoid A;"), lock, named)).toEqual(["import of '../../contracts/other' isn't in the plan"]);
+    expect(check(withImport("import { A } from '../../contracts/api';"), lock, named)).toEqual([]);
+    expect(check(withImport("import { A } from '../../contracts/other';"), lock, named)).toEqual(["import of '../../contracts/other' isn't in the plan"]);
   });
   test('a planned import removed', () => {
     const planned = lockOf(withImport("import '../greeting/Greeting';"));

@@ -7,13 +7,21 @@ import type { FileLock, Lock } from '../formats/lock.ts';
 import { PLAN_PATH } from '../formats/plan.ts';
 import type { Plan } from '../formats/plan.ts';
 import { atomicWrite } from './atomic.ts';
-import { fingerprintCode } from './codeprint.ts';
+import { fingerprintSource, parseProblem, parseSource } from './codeprint.ts';
 import { isScriptPath, locate, wholeFiles } from './lockfiles.ts';
 import { requireSeamDir } from './seamdir.ts';
 import { hashFile } from './text.ts';
 
 export { fingerprintCode } from './codeprint.ts';
 export { hash, hashFile, normalize } from './text.ts';
+
+/** Fingerprint a planned code file. One that doesn't parse can't be fingerprinted, so it is refused, not locked as it is. */
+function codeLock(plannedPath: string, key: string, text: string): FileLock {
+  const sf = parseSource(key, text);
+  const broken = parseProblem(sf);
+  if (broken !== null) throw new Error(`${plannedPath} can't be locked: ${broken}`);
+  return fingerprintSource(sf);
+}
 
 const whole = (abs: string): FileLock => ({ kind: 'whole', hash: hashFile(readFileSync(abs)) });
 
@@ -34,7 +42,7 @@ export function writeLock(root: string, plan: Plan): Lock {
         throw new Error(`${planned.path} is in the plan but isn't on disk, so it can't be locked.`);
       }
       const asCode = planned.kind !== 'config' && isScriptPath(planned.path);
-      files.set(at.key, asCode ? fingerprintCode(at.key, readFileSync(at.abs, 'utf8')) : whole(at.abs));
+      files.set(at.key, asCode ? codeLock(planned.path, at.key, readFileSync(at.abs, 'utf8')) : whole(at.abs));
     }
   }
   for (const at of wholeFiles(root, plan)) if (!files.has(at.key)) files.set(at.key, whole(at.abs));

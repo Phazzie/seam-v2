@@ -3,9 +3,11 @@
 import { posix } from 'node:path';
 import type { Lock } from '../formats/lock.ts';
 import type { Plan } from '../formats/plan.ts';
-import { fingerprintCode } from './codeprint.ts';
+import { fingerprintSource, parseProblem, parseSource } from './codeprint.ts';
 import type { CodeLock } from './codeprint.ts';
 import { importAllowed } from './importrules.ts';
+import { analyzeSteps } from './stepprint.ts';
+import { topLevelProblems } from './toplevel.ts';
 
 const own = <T>(record: Record<string, T>, key: string): T | undefined => (Object.hasOwn(record, key) ? record[key] : undefined);
 
@@ -19,10 +21,18 @@ function exportProblems(locked: CodeLock, now: CodeLock): string[] {
   return [...changed.filter((p): p is string => p !== null), ...added];
 }
 
-function stepProblems(locked: CodeLock, now: CodeLock): string[] {
+/** Local types are fixed too. A new one is fine (an exported one is caught as a new export); a changed or missing one is not. */
+function fixedProblems(locked: CodeLock, now: CodeLock): string[] {
+  const current = now.fixed ?? {};
+  return Object.entries(locked.fixed ?? {})
+    .filter(([key, sig]) => own(current, key) !== sig && own(locked.exports, key.slice(key.indexOf(' ') + 1)) === undefined) // an exported one is reported as an export
+    .map(([key]) => `${key} was changed or removed`);
+}
+
+function stepProblems(locked: CodeLock, now: CodeLock, ambiguous: readonly string[]): string[] {
   return Object.entries(locked.steps).flatMap(([fn, wanted]) => {
     const have = own(now.steps, fn) ?? [];
-    const problems: string[] = [];
+    const problems = ambiguous.includes(fn) ? [`more than one function is called '${fn}', so its steps can't be told apart`] : [];
     for (let i = 0; i < Math.max(wanted.length, have.length); i += 1) {
       if (wanted[i] === have[i]) continue;
       problems.push(wanted[i] === undefined ? `step ${i + 1} in ${fn} isn't in the plan` : `step ${i + 1} in ${fn} was changed or removed`);
@@ -41,19 +51,27 @@ function importProblems(path: string, locked: CodeLock, now: CodeLock, plan: Pla
 
 /**
  * What is wrong with `proposed` as the new text of the file at `path` (a path from the repo root)?
- * Checks the header, every export's signature, the step markers of each function, and the imports.
- * New private helpers are fine; a new export is not. An empty list means the change is allowed.
+ * A file that doesn't parse is reported as that and nothing else. Otherwise: the header, every
+ * export's signature, the local types, the step markers of each function, the imports, and whatever
+ * sits outside every function. New private helpers are fine; a new export is not. An empty list means
+ * the change is allowed.
  */
 export function checkAgainstLock(path: string, proposed: string, lock: Lock, plan: Plan): string[] {
   const key = posix.normalize(path.replace(/\\/g, '/'));
   const entry = own(lock.files, key);
   if (entry === undefined) return [`${key} isn't a file the lock covers`];
   if (entry.kind === 'whole') return [`${key} is locked whole and can't be changed`];
-  const now = fingerprintCode(key, proposed);
+  const sf = parseSource(key, proposed);
+  const broken = parseProblem(sf);
+  if (broken !== null) return [broken];
+  const steps = analyzeSteps(sf);
+  const now = fingerprintSource(sf, steps);
   return [
     ...(entry.header === now.header ? [] : ['the header was changed']),
     ...exportProblems(entry, now),
-    ...stepProblems(entry, now),
+    ...fixedProblems(entry, now),
+    ...stepProblems(entry, now, steps.ambiguous),
     ...importProblems(key, entry, now, plan),
+    ...topLevelProblems(sf),
   ];
 }

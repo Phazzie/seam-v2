@@ -2,50 +2,12 @@
 // its body. A function's signature, a class's method signatures and an arrow function's parameters
 // and types are all in the hash; the code inside them is not.
 import ts from 'typescript';
+import { print, withoutBody, withoutFnBody } from './printing.ts';
 import { hash } from './text.ts';
 
 const f = ts.factory;
-const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
 
-/** Print a node, leaving off a leading `export` / `export default`, so `export function x` and `function x` + `export { x }` match. */
-function print(node: ts.Node, sf: ts.SourceFile): string {
-  return printer.printNode(ts.EmitHint.Unspecified, node, sf).replace(/^export\s+(?:default\s+)?/, '');
-}
-
-function withoutFnBody(init: ts.Expression): ts.Expression {
-  if (ts.isArrowFunction(init)) {
-    return f.updateArrowFunction(init, init.modifiers, init.typeParameters, init.parameters, init.type, init.equalsGreaterThanToken, f.createBlock([]));
-  }
-  if (ts.isFunctionExpression(init)) {
-    return f.updateFunctionExpression(init, init.modifiers, init.asteriskToken, init.name, init.typeParameters, init.parameters, init.type, f.createBlock([]));
-  }
-  return init;
-}
-
-function memberWithoutBody(m: ts.ClassElement): ts.ClassElement {
-  if (ts.isMethodDeclaration(m)) return f.updateMethodDeclaration(m, m.modifiers, m.asteriskToken, m.name, m.questionToken, m.typeParameters, m.parameters, m.type, undefined);
-  if (ts.isConstructorDeclaration(m)) return f.updateConstructorDeclaration(m, m.modifiers, m.parameters, undefined);
-  if (ts.isGetAccessorDeclaration(m)) return f.updateGetAccessorDeclaration(m, m.modifiers, m.name, m.parameters, m.type, undefined);
-  if (ts.isSetAccessorDeclaration(m)) return f.updateSetAccessorDeclaration(m, m.modifiers, m.name, m.parameters, undefined);
-  if (ts.isClassStaticBlockDeclaration(m)) return f.updateClassStaticBlockDeclaration(m, f.createBlock([]));
-  if (ts.isPropertyDeclaration(m) && m.initializer) {
-    return f.updatePropertyDeclaration(m, m.modifiers, m.name, m.questionToken ?? m.exclamationToken, m.type, withoutFnBody(m.initializer));
-  }
-  return m;
-}
-
-/** The same declaration with the code of its functions taken out. */
-function withoutBody(node: ts.Node): ts.Node {
-  if (ts.isFunctionDeclaration(node)) {
-    return f.updateFunctionDeclaration(node, node.modifiers, node.asteriskToken, node.name, node.typeParameters, node.parameters, node.type, undefined);
-  }
-  if (ts.isClassDeclaration(node)) {
-    return f.updateClassDeclaration(node, node.modifiers, node.name, node.typeParameters, node.heritageClauses, node.members.map(memberWithoutBody));
-  }
-  return node;
-}
-
-function bindingNames(name: ts.BindingName): string[] {
+export function bindingNames(name: ts.BindingName): string[] {
   if (ts.isIdentifier(name)) return [name.text];
   return name.elements.flatMap((el) => (ts.isOmittedExpression(el) ? [] : bindingNames(el.name)));
 }
@@ -53,7 +15,7 @@ function bindingNames(name: ts.BindingName): string[] {
 const LET_CONST_USING = ts.NodeFlags.Let | ts.NodeFlags.Const | ts.NodeFlags.Using;
 
 /** The names an import brings in. */
-function importedNames(clause: ts.ImportClause): string[] {
+export function importedNames(clause: ts.ImportClause): string[] {
   const { name, namedBindings } = clause;
   const named = !namedBindings ? [] : ts.isNamespaceImport(namedBindings) ? [namedBindings.name] : namedBindings.elements.map((e) => e.name);
   return [...(name ? [name] : []), ...named].map((id) => id.text);
@@ -81,13 +43,25 @@ function declared(stmt: ts.Statement, sf: ts.SourceFile): [string, string][] {
 const modifiersOf = (stmt: ts.Statement): readonly ts.Modifier[] => (ts.canHaveModifiers(stmt) ? ts.getModifiers(stmt) ?? [] : []);
 const hasModifier = (stmt: ts.Statement, kind: ts.SyntaxKind): boolean => modifiersOf(stmt).some((m) => m.kind === kind);
 
-/** `exports.x = ...` and `module.exports = ...`: another way to export from a file. Returns the left side. */
-function commonJsTarget(stmt: ts.Statement): ts.Expression | null {
+/** `exports.x = ...` and `module.exports = ...`: another way to export from a file. */
+export function commonJsAssignment(stmt: ts.Statement): { left: ts.Expression; right: ts.Expression } | null {
   if (!ts.isExpressionStatement(stmt) || !ts.isBinaryExpression(stmt.expression)) return null;
-  if (stmt.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return null;
-  let root: ts.Expression = stmt.expression.left;
+  const { left, right, operatorToken } = stmt.expression;
+  if (operatorToken.kind !== ts.SyntaxKind.EqualsToken) return null;
+  let root: ts.Expression = left;
   while (ts.isPropertyAccessExpression(root) || ts.isElementAccessExpression(root)) root = root.expression;
-  return ts.isIdentifier(root) && (root.text === 'exports' || root.text === 'module') ? stmt.expression.left : null;
+  return ts.isIdentifier(root) && (root.text === 'exports' || root.text === 'module') ? { left, right } : null;
+}
+
+/** The signatures of the local things an exported value points at: `export default total`, `{ total }`, `exports.x = total`. */
+function referenced(e: ts.Expression, locals: ReadonlyMap<string, string[]>): string[] {
+  const names = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) names.add(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(e);
+  return [...names].flatMap((name) => locals.get(name) ?? []);
 }
 
 /** Each exported name, mapped to the hash of its declaration printed without its body. */
@@ -112,16 +86,23 @@ export function collectExports(sf: ts.SourceFile): Record<string, string> {
         }
       }
     } else if (ts.isExportAssignment(stmt)) {
-      const target = ts.isIdentifier(stmt.expression) ? locals.get(stmt.expression.text) ?? [] : [];
-      add(stmt.isExportEquals ? 'export=' : 'default', print(f.updateExportAssignment(stmt, stmt.modifiers, withoutFnBody(stmt.expression)), sf), ...target);
+      const value = withoutFnBody(stmt.expression);
+      add(stmt.isExportEquals ? 'export=' : 'default', print(f.updateExportAssignment(stmt, stmt.modifiers, value), sf), ...referenced(value, locals));
     } else if (ts.isNamespaceExportDeclaration(stmt)) {
       add(`as namespace ${stmt.name.text}`, 'global');
     } else if (hasModifier(stmt, ts.SyntaxKind.ExportKeyword)) {
-      if (hasModifier(stmt, ts.SyntaxKind.DefaultKeyword)) add('default', print(withoutBody(stmt), sf));
-      else for (const [name, piece] of declared(stmt, sf)) add(name, piece);
+      if (hasModifier(stmt, ts.SyntaxKind.DefaultKeyword)) {
+        add('default', print(withoutBody(stmt), sf));
+      } else {
+        const values = ts.isVariableStatement(stmt) ? stmt.declarationList.declarations.flatMap((d) => (d.initializer ? [withoutFnBody(d.initializer)] : [])) : [];
+        for (const [name, piece] of declared(stmt, sf)) add(name, piece, ...values.flatMap((v) => referenced(v, locals)));
+      }
     } else {
-      const target = commonJsTarget(stmt);
-      if (target) add(target.getText(sf).replace(/\s+/g, ''), print(stmt, sf));
+      const cjs = commonJsAssignment(stmt);
+      if (cjs) {
+        const value = withoutFnBody(cjs.right);
+        add(cjs.left.getText(sf).replace(/\s+/g, ''), print(value, sf), ...referenced(value, locals));
+      }
     }
   }
   const byName = [...pieces].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));

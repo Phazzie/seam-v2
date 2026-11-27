@@ -11,6 +11,8 @@ export const FileLockSchema = z.discriminatedUnion('kind', [
     kind: z.literal('code'),
     header: z.string(),
     exports: z.record(z.string(), z.string()),
+    // Every top-level type alias, interface and enum, exported or not, keyed `type X`, `interface X`, `enum X`.
+    fixed: z.record(z.string(), z.string()).optional(),
     steps: z.record(z.string(), z.array(z.string())),
     plannedImports: z.array(z.string()),
   }),

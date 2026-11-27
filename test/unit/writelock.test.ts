@@ -108,6 +108,19 @@ describe('writeLock', () => {
     expect(existsSync(join(root, '.seam/lock.json'))).toBe(false);
   });
 
+  test("a planned code file that doesn't parse is refused, not locked as it is", () => {
+    const root = app();
+    put(root, TOTAL, `${skeleton(total.seam, total.file)}}}} ((((\n`);
+    expect(() => writeLock(root, plan)).toThrow(/^src\/pricing\/total\.ts can't be locked: the file doesn't parse: .+ \(line \d+\)$/);
+    expect(existsSync(join(root, '.seam/lock.json'))).toBe(false);
+  });
+
+  test('the lock records the local types of a planned file', () => {
+    const root = app();
+    put(root, TOTAL, `${skeleton(total.seam, total.file)}type Money = number;\n`);
+    expect(writeLock(root, plan).files[TOTAL]).toMatchObject({ kind: 'code', fixed: { 'type Money': expect.stringMatching(/^[0-9a-f]{64}$/) } });
+  });
+
   test('a plan file that is missing is a plain error, not a lock without it', () => {
     const root = app();
     rmSync(join(root, 'plan'), { recursive: true });
