@@ -55,12 +55,10 @@ export function total(o: TotalOptions = {}): string {
     '',
     `export function total(${o.params ?? 'a: number, b: number'}): number {`,
     `  // Step 1: ${steps[0]}`,
-    '  const first = a;',
     `  // Step 2: ${steps[1]}`,
-    '  const sum = first + b;',
     ...(o.body ?? []).map((line) => `  ${line}`),
     `  // Step 3: ${steps[2]}`,
-    '  return sum;',
+    '  return a + b;',
     '}',
     '',
   ].join('\n');

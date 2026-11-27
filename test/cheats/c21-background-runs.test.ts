@@ -12,6 +12,6 @@ describe('cheat 21: background runs', () => {
     ['Bash', 'nohup node x'],
   ])('%s: %s is refused', async (tool, command) => {
     const app = await makeApp({ phase: 'plan1' });
-    expectDenied(await app.hook(run(tool, command)), /background runs aren't allowed/i);
+    expectDenied(await app.hook(run(tool, command)), /background runs aren['’]t allowed/i);
   });
 });

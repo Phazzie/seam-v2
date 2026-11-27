@@ -8,6 +8,6 @@ describe('cheat 5: editing the plan in the build phase', () => {
   test('the main agent cannot Edit plan/plan.json', async () => {
     const app = await makeApp({ phase: 'build' });
     const r = await app.hook(edit(app, 'plan/plan.json', '"estLines": 25', '"estLines": 5'));
-    expectDenied(r);
+    expectDenied(r, /frozen|protected/i);
   });
 });

@@ -1,6 +1,6 @@
 // Test helper: builds a throwaway seam project and runs the REAL bundled hook (dist/hook.mjs)
 // against it as a child process, the way Claude Code does. Nothing here imports the guard.
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -13,12 +13,14 @@ import { snapshotProtected } from '../../src/guard/tamper.ts';
 import { writeLock } from '../../src/lib/fingerprint.ts';
 import type { Ctx, HookInput, Phase } from '../../src/types.ts';
 import { FIXTURE, skeleton } from './code.ts';
+import { interpret, runNode } from './run.ts';
+import type { HookResult, ProcResult } from './run.ts';
+
+export type { HookResult, ProcResult };
 
 const REPO = resolve(import.meta.dirname, '../..');
 const HOOK = join(REPO, 'dist/hook.mjs');
 const CLI = join(REPO, 'dist/seam.mjs');
-/** A hook that has not answered by now is dead; the guard's own limit is 20 s. */
-const KILL_AFTER_MS = 27_000;
 
 /** The `agent_*` fields of a hook input: empty for the main agent. */
 export type Who = Pick<HookInput, 'agent_id' | 'agent_type'>;
@@ -38,30 +40,11 @@ export interface AppOptions {
   turn?: { file: string; agentId: string };
 }
 
-export interface HookResult {
-  /** `permissionDecision: "deny"` in the output, or exit code 2. */
-  denied: boolean;
-  /** `decision: "block"` in the output. */
-  blocked: boolean;
-  reason: string;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  ms: number;
-}
-
 export interface HookOptions {
   env?: Record<string, string>;
   /** Raw text to send on stdin instead of the JSON of the input. */
   stdin?: string;
   cwd?: string;
-}
-
-export interface ProcResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  ms: number;
 }
 
 export interface App {
@@ -91,50 +74,6 @@ function tempDir(prefix: string): string {
 function put(base: string, rel: string, text: string): void {
   mkdirSync(dirname(join(base, rel)), { recursive: true });
   writeFileSync(join(base, rel), text);
-}
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-/** Parse hook output. Empty or non-JSON output means "no decision", so it gives `{}`. */
-function parseOutput(text: string): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(text);
-    return isRecord(value) ? value : {};
-  } catch {
-    return {};
-  }
-}
-
-function runNode(script: string, args: string[], stdin: string, cwd: string, env: NodeJS.ProcessEnv): Promise<ProcResult> {
-  return new Promise((done, fail) => {
-    const started = Date.now();
-    const child = spawn(process.execPath, [script, ...args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk));
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk));
-    // A process that exits without reading all of stdin closes the pipe; that is not a test error.
-    child.stdin.on('error', () => {});
-    const timer = setTimeout(() => child.kill(), KILL_AFTER_MS);
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      fail(err);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      done({ stdout, stderr, exitCode: code ?? -1, ms: Date.now() - started });
-    });
-    child.stdin.end(stdin);
-  });
-}
-
-function interpret(run: ProcResult): HookResult {
-  const out = parseOutput(run.stdout);
-  const specific = isRecord(out.hookSpecificOutput) ? out.hookSpecificOutput : {};
-  const denyByJson = specific.permissionDecision === 'deny';
-  const blocked = out.decision === 'block';
-  const said = denyByJson ? specific.permissionDecisionReason : blocked ? out.reason : run.exitCode === 2 ? run.stderr : '';
-  return { denied: denyByJson || run.exitCode === 2, blocked, reason: String(said ?? '').trim(), ...run };
 }
 
 /** The context the guard modules take, read back from what the app holds on disk. */
@@ -178,9 +117,11 @@ export async function makeApp(opts: AppOptions): Promise<App> {
   if (opts.snapshot ?? opts.lock) snapshotProtected(ctxOf(root, dataDir, pluginRoot));
 
   const env = (extra: Record<string, string> = {}, forCli = false): NodeJS.ProcessEnv => {
-    const base: NodeJS.ProcessEnv = { ...process.env, CLAUDE_PLUGIN_DATA: dataDir, CLAUDE_PLUGIN_ROOT: pluginRoot };
-    for (const key of Object.keys(base)) if (key.startsWith('SEAM_TEST_')) delete base[key];
-    return { ...base, ...(forCli ? { SEAM_DATA_DIR: dataDir } : {}), ...extra };
+    // Nothing the developer's own shell has set (Claude Code's or a test switch) may leak in.
+    const base: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(base)) if (/^(SEAM_TEST_|CLAUDE_)/i.test(key)) delete base[key];
+    const ours = { CLAUDE_PLUGIN_DATA: dataDir, CLAUDE_PLUGIN_ROOT: pluginRoot, ...(forCli ? { SEAM_DATA_DIR: dataDir } : {}) };
+    return { ...base, ...ours, ...extra };
   };
   return {
     root,

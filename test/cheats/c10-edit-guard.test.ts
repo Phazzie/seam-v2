@@ -11,12 +11,12 @@ describe('cheat 10: tampering with the guard or its records', () => {
     const app = await makeApp({ phase: 'build' });
     const file_path = join(app.pluginRoot, 'dist', 'hook.mjs');
     const r = await app.hook(pre('Edit', { file_path, old_string: 'import', new_string: 'import' }));
-    expectDenied(r, /plugin|guard|protected/i);
+    expectDenied(r, /protected|plugin['’]s own files/i);
   });
 
   test('PowerShell Remove-Item .seam -Recurse is refused', async () => {
     const app = await makeApp({ phase: 'build' });
-    expectDenied(await app.hook(run('PowerShell', 'Remove-Item .seam -Recurse -Force')));
+    expectDenied(await app.hook(run('PowerShell', 'Remove-Item .seam -Recurse -Force')), /records|protected|scripts/i);
   });
 
   test('a lock.json rewritten behind the guard is blocked and restored', async () => {
