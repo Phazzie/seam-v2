@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { readGuardEnv } from '../config/env.ts';
 import type { GuardEnv } from '../config/env.ts';
 import { touchHeartbeat } from '../lib/heartbeat.ts';
-import { extendedPathProblem, isPathRefusal } from '../lib/pathcheck.ts';
+import { extendedPathProblem, isPathRefusal, staysOnNetwork } from '../lib/pathcheck.ts';
 import type { HookInput } from '../types.ts';
 import { buildCtx } from './context.ts';
 import { raceDeadline } from './deadline.ts';
@@ -43,6 +43,8 @@ interface Run {
 
 /** Where to look for the project list when Claude Code gave no data folder: a folder that is never there. */
 const NO_DATA_DIR = join(tmpdir(), 'seam-guard-no-data-folder');
+/** Why a block is not counted when the data folder is on the network: the count is mirrored there. */
+const NOT_ON_NETWORK = 'this block was not recorded: the plugin data folder is on the network, which the guard does not write to';
 const waitForever = (): Promise<never> => new Promise<never>(() => undefined);
 
 /**
@@ -52,7 +54,7 @@ const waitForever = (): Promise<never> => new Promise<never>(() => undefined);
 function deny(run: Run, reason: string, note?: string): HookOutput {
   let shown = reason;
   if (run.root !== null && run.env.dataDir !== null) {
-    const failed = recordRefusal(run.root, run.env.dataDir, run.input, run.event, reason);
+    const failed = staysOnNetwork(run.env.dataDir) ? NOT_ON_NETWORK : recordRefusal(run.root, run.env.dataDir, run.input, run.event, reason);
     if (failed !== '') shown = `${reason} (${failed})`;
   }
   return { ...refusal(run.event, shown), note };
@@ -73,6 +75,10 @@ async function inSeamProject(run: Run, found: Extract<Found, { kind: 'seam' }>):
   }
   if (env.dataDir === null || env.pluginRoot === null) {
     throw new Error('CLAUDE_PLUGIN_DATA or CLAUDE_PLUGIN_ROOT is not set, so the guard does not know where the plugin keeps its files');
+  }
+  // A data folder on the network is a doubt (R46): checking paths against it would ask its host, and so would counting the block.
+  if (staysOnNetwork(env.dataDir)) {
+    throw new Error(`CLAUDE_PLUGIN_DATA (${env.dataDir}) is a network path, which the guard does not look at, so it does not know where the plugin keeps its files`);
   }
   if (env.forceThrow) throw new Error('SEAM_TEST_FORCE_THROW is set');
   if (env.forceHang) await (run.options.stall ?? waitForever)();
