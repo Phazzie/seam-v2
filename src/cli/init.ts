@@ -2,19 +2,21 @@
 // data folder written down in env.json, since the commands cannot see CLAUDE_PLUGIN_DATA), lists the project in the
 // data folder (so deleting `.seam/` cannot switch the guard off), takes the first snapshot of the protected files, and
 // logs it. The project is listed only once its state exists: a listed folder with no state is "missing", and blocks every call.
-import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
-import { join, resolve, win32 } from 'node:path';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { join, win32 } from 'node:path';
 import { loadPlan } from '../formats/plan.ts';
 import type { SeamState } from '../formats/state.ts';
 import { buildCtx } from '../guard/context.ts';
 import { snapshotProtected } from '../guard/tamper.ts';
+import { takeInFiles } from '../guard/tampertake.ts';
 import { atomicWrite } from '../lib/atomic.ts';
 import { logLine } from '../lib/log.ts';
 import { registerProject } from '../lib/paths.ts';
 import { isListed } from '../lib/registry.ts';
 import { withEffectiveRoots } from '../lib/roots.ts';
-import { readState, writeState } from '../lib/store.ts';
+import { readState, withLock, writeState } from '../lib/store.ts';
 import { ENV_PATH, findRoot, readEnvFile } from './home.ts';
+import { recoveredEnv, requireFolders } from './initenv.ts';
 import { lostStateRefusal } from './initsigns.ts';
 import { desktopFolder, installShortcut } from './shortcut.ts';
 import { findLink } from './shortcutlink.ts';
@@ -34,15 +36,6 @@ export interface InitOptions {
   desktopDir?: string | null;
   platform?: NodeJS.Platform;
 }
-
-const isFolder = (path: string): boolean => {
-  try {
-    return statSync(path).isDirectory();
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw err;
-  }
-};
 
 /**
  * Is the setup of this project (which has its state) not whole? Judged by what is left of it (R83), not by the data folder being there: a
@@ -76,16 +69,22 @@ function shortcutNote(root: string, o: InitOptions): string {
 }
 
 /**
- * Make an incomplete setup whole again (R77): write env.json, make sure the data folder is there and the project is listed in it, and put
- * the state's copy where the guard looks for it. The guard's record of the protected files lives in the data folder; if that was lost,
+ * Make an incomplete setup whole again (R77): write env.json (from the guard's saved copy of it, folders and all, R84), make sure the data
+ * folder is there and the project is listed in it, and put the state's copy where the guard looks for it. The guard's record agrees with
+ * the env.json written, in the same hold of the project lock, so the next check does not take it for tampering. The guard's record of the protected files lives in the data folder; if that was lost,
  * the owner's "accept my own edits" in the Seam Approve window takes a fresh one, so nothing the AI can run does.
  */
 function completeSetup(root: string, o: InitOptions): string {
-  const env: SeamEnv = { ...readEnvFile(root), dataDir: o.dataDir };
+  const env = recoveredEnv(root, o);
+  const plan = loadPlan(root);
+  if (plan !== null) withEffectiveRoots(plan, env); // a plan that names other folders is refused before anything is written (R81)
   mkdirSync(o.dataDir, { recursive: true });
-  atomicWrite(join(root, ENV_PATH), `${JSON.stringify(env, null, 2)}\n`);
-  registerProject(root, o.dataDir);
-  writeState(root, o.dataDir, readState(root));
+  withLock(root, () => {
+    atomicWrite(join(root, ENV_PATH), `${JSON.stringify(env, null, 2)}\n`);
+    registerProject(root, o.dataDir);
+    writeState(root, o.dataDir, readState(root));
+    takeInFiles(buildCtx(root, o.dataDir, o.pluginRoot, o.now ?? new Date()), [ENV_PATH]);
+  });
   logLine(root, 'Seam project setup completed again', o.now);
   return `This project's setup was incomplete and is whole again (its records folder is ${o.dataDir}). ${shortcutNote(root, o)}`;
 }
@@ -102,9 +101,7 @@ export function initProject(o: InitOptions): string {
   // No state.json is not the same as new (R82): if anything else of the project is left, starting it again would wipe what the guard saved.
   const lost = lostStateRefusal(root, o.dataDir);
   if (lost !== null) throw new Error(lost);
-  for (const [flag, folder] of [['--app-root', o.appRoot], ['--legacy', o.legacy]] as const) {
-    if (folder !== undefined && !isFolder(resolve(root, folder))) throw new Error(`${flag} ${folder}: there is no such folder in ${root}.`);
-  }
+  requireFolders(root, o);
   const env: SeamEnv = { dataDir: o.dataDir, ...(o.appRoot === undefined ? {} : { appRoot: o.appRoot }), ...(o.legacy === undefined ? {} : { legacyRoot: o.legacy }) };
   // A plan that is here already must name the same folders (R81): if it does not, the guard would refuse every call, so nothing is written.
   const plan = loadPlan(root);

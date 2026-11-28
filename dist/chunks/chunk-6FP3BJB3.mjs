@@ -1,7 +1,0 @@
-import { createRequire as __seamCreateRequire } from 'node:module';
-import { fileURLToPath as __seamFileURLToPath } from 'node:url';
-import { dirname as __seamDirname } from 'node:path';
-const require = __seamCreateRequire(import.meta.url);
-const __filename = __seamFileURLToPath(import.meta.url);
-const __dirname = __seamDirname(__filename);
-import{b as s,d,e as R,f as P,h as w,k as A,n as L}from"./chunk-NDJTGJV2.mjs";import{a as p,c as H}from"./chunk-X7WWZMRB.mjs";import{a,b as l,c,e as u,h as T}from"./chunk-LW6BVUKE.mjs";import{c as g,e as y}from"./chunk-JEWKEWC6.mjs";import{f as k,n as b}from"./chunk-BE2TKDIW.mjs";import{existsSync as v,statSync as B}from"node:fs";function f(r){try{return r(),!1}catch(t){if(t instanceof Error)return!0;throw t}}function m(r,t,e){let o=Object.keys(t.files).find(i=>s(i)===s(e));if(o===void 0)return!1;let n=A(r,d(r,o),t.files[o]);return typeof n=="string"?!1:(t.files[o]=n,!0)}var E=r=>f(()=>{let t=u(r);t!==null&&T(t,l(r))});function h(r,t,e){let o=Object.keys(t.files).find(i=>s(i)===s(e));if(o===void 0)return!1;let n=d(r,o);return!(v(n)&&B(n).isFile()&&w(n)===t.files[o].hash)}function O(r){let t=R(r),e=[];if(t!==null){let[o,n]=[f(()=>u(r.root)),f(()=>l(r.root))],i=!o&&!n&&E(r.root);(o||i&&h(r,t,c))&&m(r,t,c)&&e.push(c),f(()=>H(r.root))&&m(r,t,p)&&e.push(p),(n||i&&h(r,t,a))&&m(r,t,a)&&e.push(a),e.length>0&&P(r,t)}f(()=>y(r.root))&&L(r)&&e.push(k);for(let o of e)g(r.root,`Put back ${o}: it had been overwritten with text the guard cannot read.`);return e}function z(r){return b(r.root,()=>O(r))}export{O as a,z as b};
