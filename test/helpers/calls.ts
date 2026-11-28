@@ -59,9 +59,14 @@ export function expectBlocked(r: HookResult, reason?: RegExp): void {
   expectReason(r, reason, false);
 }
 
-/** A legitimate action: the hook must stay silent, neither refusing nor blocking. */
+/**
+ * A legitimate action: the hook must stay silent, neither refusing nor blocking. It must also have
+ * exited cleanly with output that is empty or JSON; a crash (exit 1, or a stack trace) is not "allowed".
+ */
 export function expectAllowed(r: HookResult): void {
   expect(r.denied || r.blocked, `the hook refused a legitimate action (${seen(r)})`).toBe(false);
+  expect(r.exitCode, `the hook did not exit cleanly (${seen(r)})`).toBe(0);
+  expect(r.outputError, `the hook's output was not what Claude Code reads (${seen(r)})`).toBe('');
 }
 
 /** A reason the owner can read: no stack frames, no file:line:col, no Node internals. */

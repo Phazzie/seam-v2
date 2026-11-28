@@ -65,14 +65,19 @@ export function runNode(script: string, args: string[], stdin: string, cwd: stri
 
 /**
  * Turn a finished hook run into what Claude Code would act on. A crash (any other non-zero exit)
- * is neither denied nor blocked, because Claude Code lets the action through. The guard never
- * says "allow", so output that does is a bug and throws, which fails the test that triggered it.
+ * is neither denied nor blocked, because Claude Code lets the action through. The guard only denies,
+ * blocks or stays silent. Output that says "allow" or "ask" (the permission decisions that hand the
+ * call on or to the owner), or approves at the top level (`decision: "approve"`, the old way of
+ * allowing), is a bug and throws, which fails the test that triggered it.
  */
 export function interpret(run: ProcResult): HookResult {
   const { value: out, error } = parseOutput(run.stdout);
   const specific = isRecord(out.hookSpecificOutput) ? out.hookSpecificOutput : {};
-  if (specific.permissionDecision === 'allow') {
-    throw new Error(`The hook printed permissionDecision "allow"; the guard may only deny or stay silent. Output: ${run.stdout}`);
+  if (specific.permissionDecision === 'allow' || specific.permissionDecision === 'ask') {
+    throw new Error(`The hook printed permissionDecision "${String(specific.permissionDecision)}"; the guard may only deny or stay silent. Output: ${run.stdout}`);
+  }
+  if (out.decision === 'approve') {
+    throw new Error(`The hook printed decision "approve"; the guard may only deny, block or stay silent. Output: ${run.stdout}`);
   }
   const denyByJson = specific.permissionDecision === 'deny';
   const blocked = out.decision === 'block';
