@@ -47,7 +47,7 @@ describe('I-1: a write that is under way is left alone by every other call\'s ch
     const app = await makeApp({ phase: 'plan2', snapshot: true });
     expect(await decideFor(app, { ...write(app, PLAN, longerPlan(app)), tool_use_id: 'w-3' })).toEqual(ALLOW);
     app.writeRaw(PLAN, longerPlan(app));
-    app.writeRaw('.seam/env.json', '{}');
+    app.writeRaw('.seam/env.json', '{"dataDir":"somewhere-else"}'); // valid, so it is a plain change (the guard now reads env.json)
     const out = await decideFor(app, bash('b-3'));
     expect(out).toEqual({ kind: 'deny', reason: '.seam/env.json was changed outside the rules and has been put back' });
     expect(app.read(PLAN)).toContain('"zod"');

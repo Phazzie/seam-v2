@@ -76,6 +76,12 @@ export function findProject(cwd: string, dataDir: string): ProjectLookup {
   return gone === undefined ? { kind: 'none' } : { kind: 'missing', root: gone };
 }
 
+/** Is this folder in the project list? Throws, in plain words, if the list exists but cannot be read. */
+export function isListed(root: string, dataDir: string): boolean {
+  const entry = resolveReal(root, '.');
+  return written(dataDir).some((listed) => (spelled(listed) ?? listed) === entry);
+}
+
 /**
  * Add a project to the list (once). The file is replaced whole (atomicWrite, which also waits out a Windows
  * reader that has it open for a moment), so a reader never sees half of it and the write never fails on one. The

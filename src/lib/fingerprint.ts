@@ -2,6 +2,7 @@
 // and everything else the plan protects is fingerprinted whole. The result is `.seam/lock.json`.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadEnv } from '../formats/env.ts';
 import { LOCK_PATH, parseLock } from '../formats/lock.ts';
 import type { FileLock, Lock } from '../formats/lock.ts';
 import { PLAN_PATH } from '../formats/plan.ts';
@@ -9,6 +10,7 @@ import type { Plan } from '../formats/plan.ts';
 import { atomicWrite } from './atomic.ts';
 import { fingerprintSource, parseProblem, parseSource } from './codeprint.ts';
 import { isScriptPath, locate, wholeFiles } from './lockfiles.ts';
+import { withEffectiveRoots } from './roots.ts';
 import { requireSeamDir } from './seamdir.ts';
 import { hashFile } from './text.ts';
 
@@ -31,10 +33,12 @@ const whole = (abs: string): FileLock => ({ kind: 'whole', hash: hashFile(readFi
  * and fixtures folders and the config files get a whole-file hash; planned code files get named items.
  * The tamper check compares files with its own record, not with the lock, so a script that writes the lock must
  * then take a new snapshot (`snapshotProtected`, guard/tamper.ts), or the check puts the new lock.json back.
+ * The files are looked for where the app really is: the plan's folder, or env.json's where the plan keeps the default (R81).
  */
-export function writeLock(root: string, plan: Plan): Lock {
+export function writeLock(root: string, given: Plan): Lock {
   requireSeamDir(root, "the lock can't be written");
   if (!existsSync(join(root, PLAN_PATH))) throw new Error(`${PLAN_PATH} is missing, so the plan can't be locked.`);
+  const plan = withEffectiveRoots(given, loadEnv(root));
   const files = new Map<string, FileLock>();
   for (const seam of plan.seams) {
     for (const planned of seam.files) {

@@ -46,7 +46,12 @@ export function touchHeartbeat(root: string, now: Date): void {
   });
 }
 
+/** The last check-in and the gaps recorded so far (oldest first), or null if there is no heartbeat file yet. */
+export function readHeartbeat(root: string): { lastSeen: string; gaps: Gap[] } | null {
+  return loadJson(HeartbeatSchema, root, HEARTBEAT_PATH);
+}
+
 /** The gaps recorded so far, oldest first. None if there is no heartbeat file yet. */
 export function heartbeatGaps(root: string): Gap[] {
-  return loadJson(HeartbeatSchema, root, HEARTBEAT_PATH)?.gaps ?? [];
+  return readHeartbeat(root)?.gaps ?? [];
 }

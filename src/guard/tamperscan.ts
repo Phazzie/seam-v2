@@ -18,11 +18,11 @@ import { walkRepo } from './tamperwalk.ts';
  */
 export interface Finding { key: string; kind: 'file' | 'newProtected' | 'newCode' | 'newOther' }
 
-/** The size and time of a file, or null if it is not there. */
-export function look(abs: string): { size: number; mtimeMs: number } | null {
+/** The size and time of what is at `abs`, and whether it is a folder, or null if nothing is there. */
+export function look(abs: string): { size: number; mtimeMs: number; directory: boolean } | null {
   try {
-    const { size, mtimeMs } = lstatSync(abs);
-    return { size, mtimeMs };
+    const stat = lstatSync(abs);
+    return { size: stat.size, mtimeMs: stat.mtimeMs, directory: stat.isDirectory() };
   } catch (err) {
     if (errorCode(err) === 'ENOENT' || errorCode(err) === 'ENOTDIR') return null;
     throw err;
@@ -37,10 +37,10 @@ export function quickScan(ctx: Ctx, rec: TamperRecord): Finding[] {
   });
 }
 
-/** Is the file at `abs` not what `entry` says? Looks at the size first, and reads the file only when that is the same. */
+/** Is the file at `abs` not what `entry` says? Looks at the size first, and reads the file only when that is the same (never a folder: that is a change, and reading one throws). */
 function differs(abs: string, entry: Entry): boolean {
   const now = look(abs);
-  if (now === null || now.size !== entry.size) return true;
+  if (now === null || now.directory || now.size !== entry.size) return true;
   return hashOf(abs) !== entry.hash;
 }
 

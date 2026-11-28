@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { tempFolder } from '../config/temp.ts';
+import { loadEnv } from '../formats/env.ts';
 import { errorCode } from '../lib/atomic.ts';
 import { classify, inBuildOutput, rel, resolveReal } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
@@ -104,10 +105,10 @@ async function decideContract(input: HookInput, ctx: Ctx, t: Target): Promise<De
 }
 
 /** plan/plan.json itself: what it would hold afterwards has to be a valid plan (writeplan.ts). */
-function decidePlanFile(input: HookInput, t: Target): Decision {
+function decidePlanFile(input: HookInput, ctx: Ctx, t: Target): Decision {
   const proposed = proposedContent(input, currentText(input, t.real));
   if (!proposed.ok) return deny(proposed.reason);
-  const problem = planProblem(proposed.text);
+  const problem = planProblem(proposed.text, loadEnv(ctx.root));
   return problem === null ? ALLOW : deny(problem);
 }
 
@@ -117,7 +118,7 @@ function decideMain(input: HookInput, ctx: Ctx, t: Target): Promise<Decision> | 
     case 'plan':
       if (!PLANNING.has(phase)) return deny(why.planFrozen(phase));
       if (!PLAN_FILE.test(t.name)) return deny(why.PLAN_HOLDS);
-      return t.inRepo === PLAN_PATH ? decidePlanFile(input, t) : ALLOW;
+      return t.inRepo === PLAN_PATH ? decidePlanFile(input, ctx, t) : ALLOW;
     case 'contracts': return decideContract(input, ctx, t);
     case 'tests': return phase === 'tests' ? ALLOW : deny(why.testsFrozen(phase));
     case 'app-code': return deny(why.ONLY_BUILDERS);

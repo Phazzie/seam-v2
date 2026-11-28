@@ -2,12 +2,12 @@
 // Hooks run side by side, so anything that reads, changes and writes state does it in one
 // `withLock` (see lock.ts), most simply with `updateState`.
 import { createHash } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { loadState, parseState, STATE_PATH } from '../formats/state.ts';
 import type { SeamState } from '../formats/state.ts';
 import type { Role } from '../types.ts';
-import { atomicWrite } from './atomic.ts';
+import { atomicWrite, errorCode } from './atomic.ts';
 import { withLock } from './lock.ts';
 import { logLine } from './log.ts';
 import { resolveReal } from './paths.ts';
@@ -43,16 +43,48 @@ export function writeState(root: string, dataDir: string, s: SeamState): void {
   atomicWrite(join(root, STATE_PATH), text);
 }
 
+/** The text of a file, or null if it is not there. */
+function textOrNull(file: string): string | null {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (err) {
+    if (errorCode(err) === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/**
+ * A change to the state is made from state.json as it is, and its result goes into the copy in the data folder, which is what the
+ * tamper check trusts. So before the state is changed from, state.json has to be what the guard last wrote (R78): if a command had
+ * changed it behind the guard (the phase set ahead, say) and a refusal were then recorded, the change would be copied into the
+ * copy and kept. If the two differ the copy wins, whether state.json was changed, deleted or filled with junk, or a write was
+ * interrupted after the copy (the copy goes first, so it is the newer one): state.json is put back from it and the change is made on that.
+ * Under the lock. A project with no copy yet has nothing to compare with.
+ */
+function mendState(root: string, dataDir: string): void {
+  const copy = textOrNull(join(dataDir, 'mirror', rootKey(root), 'state.json'));
+  if (copy === null || textOrNull(join(root, STATE_PATH)) === copy) return;
+  atomicWrite(join(root, STATE_PATH), copy);
+  logLine(root, `Put back ${STATE_PATH}, which was changed behind the guard.`);
+}
+
+/**
+ * `updateState` for a caller that already holds the project lock (a seam script that does several things in one hold:
+ * the lock is not re-entrant, so it cannot call `updateState` from inside its own `withLock`).
+ */
+export function updateStateLocked(root: string, dataDir: string, change: (s: SeamState) => SeamState): SeamState {
+  mendState(root, dataDir);
+  const next = change(readState(root));
+  writeState(root, dataDir, next);
+  return next;
+}
+
 /**
  * Change the state: read it, let `change` make the new one, write it (and its mirror), all under the
  * lock, and return the new state. If `change` throws, nothing is written. `change` must be synchronous.
  */
 export function updateState(root: string, dataDir: string, change: (s: SeamState) => SeamState): SeamState {
-  return withLock(root, () => {
-    const next = change(readState(root));
-    writeState(root, dataDir, next);
-    return next;
-  });
+  return withLock(root, () => updateStateLocked(root, dataDir, change));
 }
 
 /** Note a block: add one to `state.blocks` (under the lock) and `Blocked: <who> <what>` to the log. */

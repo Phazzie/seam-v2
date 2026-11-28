@@ -5,6 +5,7 @@
 // then the allowlist, place by place.
 import { basename, dirname, posix, resolve } from 'node:path';
 import type { FilePlan, SeamPlan } from '../formats/plan.ts';
+import { packageName } from '../lib/importrules.ts';
 import { classify, rel, resolveReal } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
 import type { Ctx, Decision, HookInput } from '../types.ts';
@@ -38,11 +39,29 @@ function ownEntry(ctx: Ctx, turnFile: string): { file: FilePlan; seam: SeamPlan 
   return null;
 }
 
-/** Is `p` a file the planned file imports? A relative import is from its folder; a folder import stands for its index file. */
+/**
+ * Is this planned import a path from the app folder (`src/util.ts`)? The plan writes its paths that way, and the lock check resolves
+ * them under the app folder (importrules.ts). Not a path: `./x` and `../x` (from the file's own folder), a package the plan lists
+ * (`react`, `lodash/fp`), a scoped or `node:` name, a drive or an absolute path, anything with an empty or climbing part.
+ */
+function isAppPath(ctx: Ctx, spec: string): boolean {
+  if (RELATIVE.test(spec) || /[:\\@]/.test(spec)) return false;
+  if (spec.split('/').some((part) => part === '' || part === '.' || part === '..')) return false;
+  const packages = ctx.plan?.packages ?? [];
+  return !packages.includes(spec) && !packages.includes(packageName(spec));
+}
+
+/**
+ * Is `p` a file the planned file imports? A relative import is from its folder, a planned path is from the app folder (R78: the plan's
+ * `imports: ["src/util.ts"]` was dropped, and the builder could not read what the plan gave it); a folder import stands for its index file.
+ */
 function isImported(ctx: Ctx, turnFile: string, imports: readonly string[], p: string): boolean {
   const from = dirname(resolve(ctx.root, turnFile));
-  return imports.filter((spec) => RELATIVE.test(spec)).some((spec) => {
-    const target = resolveReal(from, spec);
+  const targets = imports.flatMap((spec) => {
+    if (RELATIVE.test(spec)) return [{ spec, target: resolveReal(from, spec) }];
+    return isAppPath(ctx, spec) ? [{ spec, target: resolveReal(ctx.appRoot, spec) }] : [];
+  });
+  return targets.some(({ spec, target }) => {
     const named = basename(spec).includes('.');
     return (p === target && named) || (p !== target && bare(p) === bare(target)) || (dirname(p) === bare(target) && bare(basename(p)) === 'index');
   });

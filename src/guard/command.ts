@@ -4,6 +4,7 @@
 //   2. a mention of `approve` next to `seam`, or of `--no-verify`, is refused (only the owner approves);
 //   3. a background run is refused, in every spelling (a trailing `&`, Start-Process as the command, nohup, run_in_background);
 //   4. chaining, redirection, substitution, script blocks and line breaks are refused: one simple command;
+//      A word that starts with `#` is refused here too (R76): it is a comment to the shell and arguments to the guard;
 //   5. so is anything that makes the words the guard sees differ from the words the shell passes on (R56): a character
 //      that is not ASCII (non-breaking spaces and curly quotes are word breaks and quotes to PowerShell), a comma in
 //      PowerShell (it joins words into one list), a backslash before `-`, `=`, a quote or a space in Bash (it is
@@ -46,6 +47,31 @@ const asksBackground = (toolInput: Record<string, unknown> | undefined): boolean
   const asked = toolInput?.run_in_background;
   return asked !== undefined && asked !== null && asked !== false;
 };
+
+/**
+ * Does a word of the command start with `#`, outside quotes? The shell (Bash and PowerShell both) reads it, and all that follows it,
+ * as a comment, which the guard's word-by-word reading would take for arguments (R76: `git branch injected # --list` runs
+ * `git branch injected`). A `#` inside a word, or inside quotes, is only a character.
+ */
+function startsComment(command: string): boolean {
+  let quote: string | null = null;
+  let atStart = true;
+  for (const ch of command) {
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      atStart = false;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      atStart = false;
+    } else if (ch === ' ' || ch === '\t') {
+      atStart = true;
+    } else {
+      if (ch === '#' && atStart) return true;
+      atStart = false;
+    }
+  }
+  return false;
+}
 
 /** A quote next to a backslash in the text of a command: Windows PowerShell does not escape a quote it puts around a word, so `\"` ends the word early. */
 const QUOTE_AND_BACKSLASH = /\\['"]|['"]\\/;
@@ -92,6 +118,24 @@ function misleading(tool: string | undefined, command: string, words: string[]):
   return null;
 }
 
+/** What a halted run still lets the main AI run (R77): the report, and asking the owner for a `park` or an `edit`. Both only read state or write a request. */
+function recoveryCommand(seam: string[] | undefined): boolean {
+  if (seam === undefined) return false;
+  const [sub, kind, ...more] = seam;
+  return sub === 'report' || sub === 'status' || (sub === 'request' && more.length === 0 && (kind === 'park' || kind === 'edit'));
+}
+
+/**
+ * May this command run while the run is halted? Only if it may run at all and is `seam report`, `seam status`, `seam request park`
+ * or `seam request edit` (R77: the owner must be able to start recovering, and the AI to ask for it).
+ */
+export function mayRunWhileHalted(input: HookInput, ctx: Ctx): boolean {
+  if (decideCommand(input, ctx).kind !== 'allow') return false;
+  const words = scan(String(input.tool_input?.command ?? '')).segments[0] ?? [];
+  const judged = judge(words, input.cwd, ctx);
+  return judged.ok && recoveryCommand(judged.seam);
+}
+
 /** May this Bash or PowerShell call run? A refusal says why, and what to do instead. */
 export function decideCommand(input: HookInput, ctx: Ctx): Decision {
   if (roleOf(input) !== 'main') return deny(why.NOT_MAIN);
@@ -105,6 +149,7 @@ export function decideCommand(input: HookInput, ctx: Ctx): Decision {
   const background = asksBackground(input.tool_input) || BACKGROUND_SPELLING.test(command) || segments.some(([first]) => BACKGROUND_COMMAND.test(first));
   if (background) return deny(why.BACKGROUND);
   if (NOT_SIMPLE.test(command) || segments.length !== 1) return deny(why.CHAINING);
+  if (startsComment(command)) return deny(why.COMMENTS);
   const unsafe = misleading(input.tool_name, command, segments[0]);
   if (unsafe !== null) return deny(unsafe);
   if (!closed) return deny(why.OPEN_QUOTE);

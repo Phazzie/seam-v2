@@ -2,3 +2,6 @@
 *.sh text eol=lf
 # The committed bundles run straight from the plugin folder; keep them byte-identical.
 dist/** text eol=lf
+
+# The owner's shell launcher is run by sh: it must keep LF line endings on a Windows checkout (autocrlf would break the shebang).
+bin/seam text eol=lf

@@ -4,6 +4,7 @@
 import ts from 'typescript';
 import { importBindings } from './importprint.ts';
 import { jsdocTypes } from './jsdocprint.ts';
+import { mentions } from './mentions.ts';
 import { print, withoutBody, withoutFnBody } from './printing.ts';
 import { hash } from './text.ts';
 
@@ -54,17 +55,6 @@ export function commonJsAssignment(stmt: ts.Statement): { left: ts.Expression; r
   let root: ts.Expression = left;
   while (ts.isPropertyAccessExpression(root) || ts.isElementAccessExpression(root)) root = root.expression;
   return ts.isIdentifier(root) && (root.text === 'exports' || root.text === 'module') ? { left, right } : null;
-}
-
-/** The names an expression mentions, once each, in the order they first appear. */
-function mentions(e: ts.Node): string[] {
-  const names = new Set<string>();
-  const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node)) names.add(node.text);
-    ts.forEachChild(node, visit);
-  };
-  visit(e);
-  return [...names];
 }
 
 /** The local declarations of a file: what each local name is printed as, and the other names a local variable's value mentions. */

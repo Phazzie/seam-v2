@@ -11,6 +11,7 @@ export const OPEN_QUOTE = 'one simple command at a time, please (a quote in it i
 export const BACKGROUND = "background runs aren't allowed";
 export const APPROVE = "approvals happen only in the owner's approval window (the Seam Approve shortcut); the AI never runs seam approve";
 export const NO_VERIFY = '--no-verify is not allowed: the git hooks always run';
+export const COMMENTS = "comments aren't allowed in commands (a word that starts with #): the shell skips the rest of the line, so the guard and the shell would read different commands; one simple command, nothing after it";
 export const NON_ASCII = 'plain ASCII only: other characters (curly quotes, non-breaking spaces and the like) are not allowed in a command, since they can hide what a word is';
 export const POWERSHELL_COMMA = 'a comma is not allowed in a PowerShell command (it turns two words into one list); one simple command at a time, please';
 export const BASH_BACKSLASH = 'a backslash before -, =, a quote or a space is not allowed in a Bash command (it hides what a word is); use plain words';

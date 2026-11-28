@@ -79,7 +79,7 @@ describe('a write the guard allowed is accepted afterwards; one it did not allow
     const input = { ...write(app, PLAN, edited, asMain()), tool_use_id: 't-2' };
     await decideFor(app, input);
     app.writeRaw(PLAN, edited);
-    app.writeRaw('.seam/env.json', '{}');
+    app.writeRaw('.seam/env.json', '{"dataDir":"somewhere-else"}'); // valid, so it is a plain change (the guard now reads env.json)
     const after = await decideFor(app, { ...input, hook_event_name: 'PostToolUse' });
     expect(after).toEqual({ kind: 'deny', reason: '.seam/env.json was changed outside the rules and has been put back' });
   });

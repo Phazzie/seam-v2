@@ -34,7 +34,7 @@ describe('cheat 16: config and settings', () => {
     const app = await makeApp({ phase: 'build' });
     const out = await reportAfterSilence(app, 2 * 60 * 60 * 1000);
     expect(out).toMatch(/gap/i);
-    expect(out).toMatch(/2 hours?|2h|120 min/i);
+    expect(out).toMatch(/\b(2 hours?|2h|120 min)/i);
     expect(out).not.toMatch(/\bno gaps?\b/i);
   });
 
@@ -42,6 +42,6 @@ describe('cheat 16: config and settings', () => {
     const app = await makeApp({ phase: 'build' });
     const out = await reportAfterSilence(app, 60 * 1000);
     expect(out).toMatch(/\bno gaps?\b/i);
-    expect(out).not.toMatch(/2 hours?|2h|120 min/i);
+    expect(out).not.toMatch(/\b(2 hours?|2h|120 min)/i);
   });
 });
