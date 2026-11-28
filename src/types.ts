@@ -43,4 +43,6 @@ export interface Ctx {
   plan: Plan | null;
   lock: Lock | null;
   now: Date;
+  /** The old app, from .seam/env.json, when the plan names none (R80). The plan's own `legacyRoot` wins when it has one. */
+  legacyRoot?: string | null;
 }

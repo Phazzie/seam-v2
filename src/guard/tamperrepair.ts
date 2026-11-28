@@ -4,6 +4,7 @@
 // first (the plan and the lock from the guard's record and its kept copy, state.json from its copy), so the context
 // builds and the tamper check goes on as for any other change: reported, and charged to whoever made the tool call.
 // What was in the broken file is never logged, only its name.
+import { ENV_PATH, loadEnv } from '../formats/env.ts';
 import { loadLock, LOCK_PATH } from '../formats/lock.ts';
 import { loadPlan, PLAN_PATH } from '../formats/plan.ts';
 import { STATE_PATH } from '../formats/state.ts';
@@ -36,7 +37,7 @@ function putRecorded(home: Home, rec: TamperRecord, path: string): boolean {
 }
 
 /**
- * Put back whichever of plan.json, lock.json and state.json cannot be read. Returns their paths (none if all three
+ * Put back whichever of plan.json, lock.json, env.json and state.json cannot be read. Returns their paths (none if all
  * read fine, or the guard has nothing to put back from). The caller holds the project lock: `restoreBroken` takes it for this
  * alone, and `seam repair` holds it for everything it does (R76).
  */
@@ -46,6 +47,7 @@ export function restoreBrokenLocked(home: Home): string[] {
   if (rec !== null) {
     if (broken(() => loadPlan(home.root)) && putRecorded(home, rec, PLAN_PATH)) restored.push(PLAN_PATH);
     if (broken(() => loadLock(home.root)) && putRecorded(home, rec, LOCK_PATH)) restored.push(LOCK_PATH);
+    if (broken(() => loadEnv(home.root)) && putRecorded(home, rec, ENV_PATH)) restored.push(ENV_PATH); // the guard reads the old app's folder from it (R80)
     if (restored.length > 0) saveRecord(home, rec);
   }
   if (broken(() => readState(home.root)) && restoreState(home)) restored.push(STATE_PATH);

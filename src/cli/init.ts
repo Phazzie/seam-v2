@@ -74,7 +74,7 @@ export function initProject(o: InitOptions): string {
   writeState(root, o.dataDir, state);
   registerProject(root, o.dataDir);
   const now = o.now ?? new Date();
-  const ctx: Ctx = { root, appRoot: resolve(root, o.appRoot ?? '.'), dataDir: o.dataDir, pluginRoot: o.pluginRoot, state, plan: null, lock: null, now };
+  const ctx: Ctx = { root, appRoot: resolve(root, o.appRoot ?? '.'), dataDir: o.dataDir, pluginRoot: o.pluginRoot, state, plan: null, lock: null, now, legacyRoot: o.legacy ?? null };
   snapshotProtected(ctx);
   const notes = [o.appRoot === undefined ? '' : `app folder ${o.appRoot}`, o.legacy === undefined ? '' : `old app ${o.legacy}`].filter((note) => note !== '');
   logLine(root, `Seam project started${notes.length === 0 ? '' : ` (${notes.join(', ')})`}`, now);

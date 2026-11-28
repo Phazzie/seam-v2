@@ -3,15 +3,14 @@
 // command reads it from there (SEAM_DATA_DIR beats it, for a test).
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { z } from 'zod';
-import { loadJson } from '../formats/read.ts';
+import { ENV_PATH, loadEnv } from '../formats/env.ts';
+import type { SeamEnv } from '../formats/env.ts';
 import { buildCtx } from '../guard/context.ts';
 import type { Ctx } from '../types.ts';
 import type { CliEnv } from '../config/cli.ts';
 
-export const ENV_PATH = '.seam/env.json';
-const EnvSchema = z.strictObject({ dataDir: z.string().min(1), appRoot: z.string().optional(), legacyRoot: z.string().optional() });
-export type SeamEnv = z.infer<typeof EnvSchema>;
+export { ENV_PATH };
+export type { SeamEnv };
 
 /** A folder, a data folder and a plugin folder: what every command needs, whether or not the project's records can be read. */
 export interface Where { root: string; dataDir: string; pluginRoot: string }
@@ -27,7 +26,7 @@ export function findRoot(from: string, markers: readonly string[] = [STATE, ENV_
 }
 
 /** What `.seam/env.json` says, or null if it is not there. */
-export const readEnvFile = (root: string): SeamEnv | null => loadJson(EnvSchema, root, ENV_PATH);
+export const readEnvFile = (root: string): SeamEnv | null => loadEnv(root);
 
 /** The project cannot be found, or its setup is incomplete: not a damaged record (which `seam repair` can put back), so the window says to run seam init again, not to repair. */
 export class SetupError extends Error {}

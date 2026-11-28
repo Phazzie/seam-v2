@@ -113,7 +113,8 @@ export interface Places { root: string; appDir: string; old: string | null }
 /** Where the repo, the app folder and the old app are, as resolveReal spells them. */
 export function placesOf(ctx: Ctx): Places {
   const root = resolveReal(ctx.root, '.');
-  const old = ctx.plan?.legacyRoot != null ? resolveReal(root, ctx.plan.legacyRoot) : null;
+  const legacy = ctx.plan?.legacyRoot ?? ctx.legacyRoot ?? null;
+  const old = legacy !== null ? resolveReal(root, legacy) : null;
   return { root, appDir: resolveReal(root, ctx.appRoot || '.'), old };
 }
 

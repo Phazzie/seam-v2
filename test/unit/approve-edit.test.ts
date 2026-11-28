@@ -106,7 +106,7 @@ describe('approving an edit', () => {
   test('the guard\'s own records under .seam/ are not the owner\'s to edit by hand: they are left out', async () => {
     const app = await stopped();
     const code = requested(app, 'edit');
-    app.writeRaw('.seam/env.json', '{}');
+    app.writeRaw('.seam/env.json', '{"dataDir":"somewhere-else"}'); // valid, so it is a plain change (the guard now reads env.json)
     expect(approveCore({ typed: code }, ctxOf(app))).toMatchObject({ ok: true });
     expect(logText(app)).not.toMatch(/accepted their own edits/);
   });

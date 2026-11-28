@@ -4,6 +4,7 @@
 // keyboard, the Seam Approve window or the owner's own terminal, and it is not on the list of commands the AI may run:
 // it blesses whatever the saved copy holds, and nothing the AI can reach should be able to do that. It puts back only what
 // cannot be read and takes only those files into the record, so nothing else that changed is accepted along the way.
+import { ENV_PATH, loadEnv } from '../formats/env.ts';
 import { loadLock, LOCK_PATH } from '../formats/lock.ts';
 import { loadPlan, PLAN_PATH } from '../formats/plan.ts';
 import { STATE_PATH } from '../formats/state.ts';
@@ -18,7 +19,7 @@ const REFUSAL = 'repairs happen in your own terminal or the Seam Approve window,
 
 /** Which of the three files cannot be read as they are (a plan or lock that is not there is fine; state.json has to be there). */
 function unreadable(root: string): string[] {
-  const reads: [string, () => unknown][] = [[PLAN_PATH, () => loadPlan(root)], [LOCK_PATH, () => loadLock(root)], [STATE_PATH, () => readState(root)]];
+  const reads: [string, () => unknown][] = [[PLAN_PATH, () => loadPlan(root)], [LOCK_PATH, () => loadLock(root)], [ENV_PATH, () => loadEnv(root)], [STATE_PATH, () => readState(root)]];
   return reads.flatMap(([path, read]) => {
     try {
       read();
@@ -43,7 +44,7 @@ export async function repair(io: OwnerIo, home: Home): Promise<number> {
     return { fine: false, restored: put, still: unreadable(home.root) };
   });
   if (fine) {
-    io.say('Nothing needed repair: plan.json, lock.json and state.json all read fine.');
+    io.say('Nothing needed repair: plan.json, lock.json, env.json and state.json all read fine.');
     return 0;
   }
   if (restored.length > 0) io.say(`Put back ${restored.join(', ')} from the guard's saved copy.`);
