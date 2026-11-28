@@ -38,8 +38,13 @@ function undo(c: Case, key: string, abs: string, entry: Entry, verb: string, why
   return { key, problem: `${key} was ${verb} ${PUT_BACK}${why === '' ? '' : ` (${why})`}` };
 }
 
+/** A folder is where a recorded file was (R78): the file is put back, and the folder is moved to quarantine by putBack, not read, hashed or deleted. */
+const FOLDER = 'replaced by a folder';
+const FOLDER_WHY = 'the folder was moved aside, not deleted';
+
 function judgeKnown(c: Case, key: string, abs: string, entry: Entry): Verdict | null {
   const now = look(abs);
+  if (now !== null && now.directory) return undo(c, key, abs, entry, FOLDER, FOLDER_WHY);
   if (now !== null) {
     // A file of another size is changed, and is not read at all: a huge replacement is put back, never hashed whole.
     if (now.size === entry.size && hashOf(abs) === entry.hash) {
@@ -90,6 +95,10 @@ function judgeSettings(c: Case, key: string, abs: string): Verdict | null {
   const entry = c.rec.files[key];
   const now = look(abs);
   if (entry === undefined && now === null) return null;
+  if (now !== null && now.directory) {
+    const verdict = entry === undefined ? aside(c, key, abs) : undo(c, key, abs, entry, FOLDER, FOLDER_WHY);
+    return { ...verdict, halt: SWITCH_OFF }; // a folder is never read as settings
+  }
   if (entry !== undefined && now !== null && now.size === entry.size && hashOf(abs) === entry.hash) {
     c.rec.files[key] = { ...entry, size: now.size, mtimeMs: now.mtimeMs }; // only touched
     return null;
