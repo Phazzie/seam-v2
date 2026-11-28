@@ -64,6 +64,48 @@ describe('a change to permissions only is accepted, and logged', () => {
   });
 });
 
+describe("R74: the owner's MCP server approvals are accepted like permissions, and logged", () => {
+  const MCP_AUDIT = /\d\d:\d\d Claude Code updated MCP server approvals in \.claude\/settings\.local\.json\n/;
+  test.each([
+    ['enabledMcpjsonServers', { enabledMcpjsonServers: ['github'] }],
+    ['disabledMcpjsonServers', { disabledMcpjsonServers: ['slack'] }],
+    ['enableAllProjectMcpServers', { enableAllProjectMcpServers: true }],
+  ])('%s', async (_key, change) => {
+    const app = await withFile();
+    const text = json({ permissions: { allow: ['Bash(git status)'] }, model: 'opus', ...change });
+    app.writeRaw(FILE, text);
+    expect(await problemsOf(app, bash)).toEqual([]);
+    expect(app.read(FILE)).toBe(text);
+    expect(stateOf(app).halted).toBeNull();
+    expect(logText(app)).toMatch(MCP_AUDIT);
+    expect(logText(app)).not.toMatch(/put back|halted/i);
+  });
+
+  test('a change to permissions and an MCP approval together is accepted, and both are logged', async () => {
+    const app = await withFile();
+    app.writeRaw(FILE, json({ permissions: { allow: ['Bash(ls)'] }, model: 'opus', enabledMcpjsonServers: ['github'] }));
+    expect(await problemsOf(app, bash)).toEqual([]);
+    expect(logText(app)).toMatch(/Claude Code updated permissions and MCP server approvals in \.claude\/settings\.local\.json/);
+  });
+
+  test('an MCP approval together with a setting that could switch the guard off is put back, and halts', async () => {
+    const app = await withFile();
+    app.writeRaw(FILE, json({ permissions: { allow: ['Bash(git status)'] }, model: 'opus', enabledMcpjsonServers: ['github'], disableAllHooks: true }));
+    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "disableAllHooks", and only "permissions" and the MCP server approvals may be changed there)`]);
+    expect(app.read(FILE)).toBe(START);
+    expect(stateOf(app).halted).toBe(HALT);
+    expect(logText(app)).not.toMatch(/updated/);
+  });
+
+  test('a new file that holds only MCP approvals is accepted', async () => {
+    const fresh = await makeApp({ phase: 'build', lock: true });
+    fresh.writeRaw(FILE, json({ enabledMcpjsonServers: ['github'] }));
+    expect(await problemsOf(fresh, bash)).toEqual([]);
+    expect(quarantined(fresh)).toEqual([]);
+    expect(logText(fresh)).toMatch(MCP_AUDIT);
+  });
+});
+
 describe('any other setting that changes is put back, and halts the main AI', () => {
   test.each([
     ['hooks', { hooks: { PreToolUse: [] } }], ['disableAllHooks', { disableAllHooks: true }], ['env', { env: { NODE_OPTIONS: '--require x' } }],
@@ -71,7 +113,7 @@ describe('any other setting that changes is put back, and halts the main AI', ()
   ])('%s', async (field, change) => {
     const app = await withFile();
     app.writeRaw(FILE, json({ permissions: { allow: ['Bash(git status)'] }, model: 'opus', ...change }));
-    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "${field}", and only "permissions" may be changed there)`]);
+    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "${field}", and only "permissions" and the MCP server approvals may be changed there)`]);
     expect(app.read(FILE)).toBe(START);
     expect(stateOf(app).halted).toBe(HALT);
     expect(logText(app)).toMatch(/Put back \.claude\/settings\.local\.json/);
@@ -81,7 +123,7 @@ describe('any other setting that changes is put back, and halts the main AI', ()
   test('permissions changed together with another setting: the whole change is put back', async () => {
     const app = await withFile();
     app.writeRaw(FILE, json({ permissions: { allow: ['Bash(ls)'] }, model: 'opus', hooks: {} }));
-    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "hooks", and only "permissions" may be changed there)`]);
+    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "hooks", and only "permissions" and the MCP server approvals may be changed there)`]);
     expect(app.read(FILE)).toBe(START);
     expect(stateOf(app).halted).toBe(HALT);
   });
@@ -89,14 +131,14 @@ describe('any other setting that changes is put back, and halts the main AI', ()
   test('a setting that was removed counts as changed', async () => {
     const app = await withFile();
     app.writeRaw(FILE, json({ permissions: { allow: ['Bash(git status)'] } }));
-    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "model", and only "permissions" may be changed there)`]);
+    expect(await problemsOf(app, bash)).toEqual([`${BACK} (it changes "model", and only "permissions" and the MCP server approvals may be changed there)`]);
     expect(app.read(FILE)).toBe(START);
   });
 
   test('deleted while it held something besides permissions: put back', async () => {
     const app = await withFile();
     rmSync(app.abs(FILE));
-    expect(await problemsOf(app, bash)).toEqual([`${FILE} was deleted outside the rules and has been put back (it changes "model", and only "permissions" may be changed there)`]);
+    expect(await problemsOf(app, bash)).toEqual([`${FILE} was deleted outside the rules and has been put back (it changes "model", and only "permissions" and the MCP server approvals may be changed there)`]);
     expect(app.read(FILE)).toBe(START);
     expect(stateOf(app).halted).toBe(HALT);
   });

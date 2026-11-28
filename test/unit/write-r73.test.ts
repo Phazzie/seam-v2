@@ -70,7 +70,13 @@ describe('plan/plan.json is validated before the main AI writes it (it must be a
 
   test('a step list that is too short is refused, with the first problem and where it is', async () => {
     const text = planWith((plan) => void (seam(plan).steps = ['only one']));
-    expect(await reasonOf(mainWrites('plan/plan.json', 'plan1', text))).toBe("plan/plan.json isn't valid yet: seams[0].files[0].steps: needs at least 3 steps, each one specific and checkable");
+    expect(await reasonOf(mainWrites('plan/plan.json', 'plan1', text))).toBe(
+      "plan/plan.json isn't valid yet: seams[0].files[0].steps: needs at least 3 steps, each one specific and checkable; write the whole plan in one Write, or make an edit that leaves it valid",
+    );
+  });
+
+  test.each(['not JSON at all', '', '{"version": 1'])('R74: every plan refusal says how to get a valid plan in: %j', async (text) => {
+    expect(await reasonOf(mainWrites('plan/plan.json', 'plan1', text))).toMatch(/; write the whole plan in one Write, or make an edit that leaves it valid$/);
   });
 
   test.each([

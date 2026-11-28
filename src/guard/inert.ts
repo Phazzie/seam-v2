@@ -50,7 +50,7 @@ function listedRoots(dataDir: string | null): string[] {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;
   }
-  const saved: unknown = JSON.parse(text.replace(/^﻿/, ''));
+  const saved: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
   const roots = isRecord(saved) && Object.keys(saved).length === 1 ? saved.projects : undefined;
   if (!Array.isArray(roots) || !roots.every((root) => typeof root === 'string')) {
     throw new Error(`${LIST_FILE} is not in the form {"projects": [...]}`);

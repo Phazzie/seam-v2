@@ -27,7 +27,7 @@ export function sniffEvent(raw: string): HookEvent {
 export function parseInput(raw: string): Parsed {
   let value: unknown;
   try {
-    value = JSON.parse(raw.replace(/^﻿/, ''));
+    value = JSON.parse(raw.replace(/^\uFEFF/, ''));
   } catch (err) {
     return { ok: false, event: sniffEvent(raw), why: `it is not valid JSON (${describeError(err)})` };
   }
