@@ -15,8 +15,13 @@ import type { Ctx } from '../types.ts';
 import { acceptLocked } from './accept.ts';
 import { refusedWithoutKeyboard } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
+import { hasNoRecord } from './changes.ts';
 import { SetupError } from './home.ts';
 import { relocked } from './relock.ts';
+import { typedTheCode } from './typed.ts';
+
+/** What `seam edit` says, word for word, when there is no record: agreeing takes a fresh record of every protected file, not only the one named. */
+const NO_RECORD = 'The guard has no record of the protected files; agreeing takes a fresh record of every protected file as it is now';
 
 const REFUSAL = 'edits are accepted in your own terminal or the Seam Approve window, not through Claude';
 /** Kinds of path the guard does not protect: nothing to accept. */
@@ -82,15 +87,25 @@ export async function editFile(io: OwnerIo, load: () => Ctx, file: string | unde
     return 0;
   }
   const lock = relocked(ctx.lock, key, abs);
-  if (held(ctx, key, abs) && (lock === null || JSON.stringify(lock) === JSON.stringify(ctx.lock))) {
+  const noRecord = hasNoRecord(ctx);
+  if (!noRecord && held(ctx, key, abs) && (lock === null || JSON.stringify(lock) === JSON.stringify(ctx.lock))) {
     io.say(`The guard already has ${key} exactly as it is now, so there is nothing to accept.`);
     return 0;
   }
-  io.say(`${key} ${existsSync(abs) ? 'is different from what the guard has' : 'has been deleted'}. Accepting it makes the guard treat ${existsSync(abs) ? 'this version' : 'its absence'} as the approved one${lock === null ? '' : ' and updates its entry in the lock'}.`);
-  const answer = (await io.ask(`Accept ${key} as it is now? Type yes to accept: `)).trim().toLowerCase();
-  if (answer !== 'yes' && answer !== 'y') {
-    io.say('Nothing was accepted.');
-    return 1;
+  if (noRecord) {
+    // Not only this file: with no record, the one thing that can be done is to take a fresh record of every protected file, so the owner has to type a code to agree (R80).
+    io.say(`${NO_RECORD}. You asked about ${key}${lock === null ? '' : '; its entry in the lock is updated too'}.`);
+    if (!(await typedTheCode(io))) {
+      io.say("Nothing was accepted. The Seam Approve window's menu (choice 2) shows what a fresh record covers.");
+      return 1;
+    }
+  } else {
+    io.say(`${key} ${existsSync(abs) ? 'is different from what the guard has' : 'has been deleted'}. Accepting it makes the guard treat ${existsSync(abs) ? 'this version' : 'its absence'} as the approved one${lock === null ? '' : ' and updates its entry in the lock'}.`);
+    const answer = (await io.ask(`Accept ${key} as it is now? Type yes to accept: `)).trim().toLowerCase();
+    if (answer !== 'yes' && answer !== 'y') {
+      io.say('Nothing was accepted.');
+      return 1;
+    }
   }
   // One hold of the lock for all of it (R76), with the lock and the file read again inside it: they may have changed while the owner thought.
   withLock(ctx.root, () => {

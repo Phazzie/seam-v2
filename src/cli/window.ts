@@ -11,15 +11,16 @@ import { logLine } from '../lib/log.ts';
 import { updateStateLocked, withLock } from '../lib/store.ts';
 import type { Ctx } from '../types.ts';
 import { acceptLocked } from './accept.ts';
-import { approveProblem, approveRequest, TRIES } from './approve.ts';
+import { approveProblem, approveRequest } from './approve.ts';
 import { acceptEditsLocked, changesIn, editFingerprints, hasNoRecord, listChanges, NO_RECORD_YET } from './changes.ts';
 import { SetupError } from './home.ts';
 import { THE_WINDOW, refusedOutsideWindow } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
-import { loadPending, newCode, PENDING_PATH, sameFingerprints } from './pending.ts';
+import { loadPending, PENDING_PATH, sameFingerprints } from './pending.ts';
 import type { Pending } from './pending.ts';
 import { renderReport } from './report.ts';
 import { repair } from './repair.ts';
+import { typedTheCode } from './typed.ts';
 
 const menu = (badRequest: boolean): string =>
   ['', 'Seam Approve', '  1) Show the report', '  2) Accept my own edits to protected files', '  3) Repair a broken record', '  4) Close',
@@ -40,18 +41,6 @@ function tryLoad(load: () => Ctx, io: OwnerIo): Loaded {
     io.say(`${err.message} Choose 3 to put back the guard's saved copy.`); // a damaged record is what repair is for
     return null;
   }
-}
-
-/** A fresh code to type back, three tries. True if it was typed. */
-async function typedTheCode(io: OwnerIo): Promise<boolean> {
-  const code = newCode();
-  io.say(`Code: ${code}`);
-  for (let attempt = 1; attempt <= TRIES; attempt += 1) {
-    if ((await io.ask(`Type the code above to confirm (try ${attempt} of ${TRIES}): `)).trim().toUpperCase() === code) return true;
-    io.say('That is not the code.');
-  }
-  io.say('Three wrong tries, so nothing was accepted.');
-  return false;
 }
 
 /** What the owner is told before the code is asked for: what differs, or that there is no record and a fresh one will be taken. */
