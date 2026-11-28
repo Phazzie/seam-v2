@@ -11,13 +11,14 @@ import { snapshotProtected } from '../guard/tamper.ts';
 import { atomicWrite } from '../lib/atomic.ts';
 import { logLine } from '../lib/log.ts';
 import { registerProject } from '../lib/paths.ts';
+import { isListed } from '../lib/registry.ts';
 import { withEffectiveRoots } from '../lib/roots.ts';
 import { readState, writeState } from '../lib/store.ts';
 import { ENV_PATH, findRoot, readEnvFile } from './home.ts';
 import { lostStateRefusal } from './initsigns.ts';
 import { desktopFolder, installShortcut } from './shortcut.ts';
 import { findLink } from './shortcutlink.ts';
-import { shortcutNameFor } from './shortcutnames.ts';
+import { scriptPathFor, shortcutNameFor } from './shortcutnames.ts';
 import type { SeamEnv } from './home.ts';
 
 export interface InitOptions {
@@ -43,10 +44,16 @@ const isFolder = (path: string): boolean => {
   }
 };
 
-/** Is the setup of this project (which has its state) not whole: no `.seam/env.json`, or one that names a data folder that is gone? */
-function setupIncomplete(root: string): boolean {
+/**
+ * Is the setup of this project (which has its state) not whole? Judged by what is left of it (R83), not by the data folder being there: a
+ * hook's refusal writes the state's copy into the data folder, which makes a lost folder again, empty. So: no `.seam/env.json`, or a data
+ * folder that is gone, or the project not in the project list kept there, or (where the project has a desktop shortcut) no launcher for it.
+ */
+function setupIncomplete(root: string, o: InitOptions): boolean {
   const env = readEnvFile(root);
-  return env === null || !existsSync(env.dataDir);
+  if (env === null || !existsSync(env.dataDir) || !isListed(root, env.dataDir)) return true;
+  const desktop = desktopFolder(o.desktopDir ?? null, o.platform);
+  return desktop !== null && findLink(root, desktop) !== null && !existsSync(scriptPathFor(env.dataDir, root));
 }
 
 /**
@@ -89,7 +96,7 @@ export function initProject(o: InitOptions): string {
   const existing = findRoot(root, ['.seam/state.json']);
   if (existing !== null && existing !== root) throw new Error(`${root} is already inside the seam project at ${existing}, so a new one is not started here.`);
   if (existing !== null) {
-    if (setupIncomplete(root)) return completeSetup(root, o);
+    if (setupIncomplete(root, o)) return completeSetup(root, o);
     throw new Error(`${root} is a seam project already.`);
   }
   // No state.json is not the same as new (R82): if anything else of the project is left, starting it again would wipe what the guard saved.
