@@ -20,7 +20,7 @@ describe('R60: no wildcard in the words of a command', () => {
   test.each([
     'git log -p -- .se?m', "git log -p -- '.se*'", 'git diff CLAUDE.m?', 'git show HEAD:.cl?ude/settings.json', 'git diff -- .se[a]m/state.json', 'git log -- *',
     'git diff [c]laude.md', 'git status .s*m', 'git log -- ".se?m/state.json"', 'npx vitest run test/*.test.ts', 'seam request freeze?', 'git log --grep=a*b',
-    'git branch --list "feature/*"', 'git show HEAD:.seam/sta*e.json', 'git diff --stat=?', 'git log -- .sea[m]',
+    'git branch --contains "feat*"', 'git show HEAD:.seam/sta*e.json', 'git diff --stat=?', 'git log -- .sea[m]',
   ])('%s', (command) => {
     for (const tool of TOOLS) expect(whyNot(s, command, { tool }), tool).toBe(WILDCARD);
   });

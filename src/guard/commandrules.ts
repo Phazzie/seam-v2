@@ -24,8 +24,10 @@ const BRANCH_LONG = new Set([
   'color', 'no-color', 'column', 'no-column', 'ignore-case', 'points-at', 'abbrev', 'no-abbrev',
 ]);
 const BRANCH_SHORT = new Set(['a', 'r', 'v', 'i']);
-/** A name given to `git branch` makes a branch, unless the command is asking for a list. */
-const BRANCH_LISTING = new Set(['list', 'contains', 'no-contains', 'merged', 'no-merged', 'points-at']);
+/** Listing options that take a value, which is the next word when it is not written `--name=value` (git tried: a word after `--format x` makes a branch). */
+const BRANCH_VALUE = new Set(['sort', 'format', 'points-at']);
+/** The same, but git takes the next word as the value only if there is one and it is not `--` (`--contains` alone means `--contains HEAD`). */
+const BRANCH_VALUE_OR_DEFAULT = new Set(['contains', 'no-contains', 'merged', 'no-merged']);
 
 /** The words as the shell passes them on, and with the backslash escapes taken out (`--out\put` is `--output`): an option check asks about both (R56). */
 export const readings = (words: string[]): string[][] => [words, words.map(unescaped)];
@@ -62,22 +64,29 @@ function refusedOption(args: string[]): { arg: string; why: string } | null {
   return null;
 }
 
-/** What is wrong with these `git branch` words, if anything: an option that is not for listing, or a name that would make a branch. */
+/**
+ * What is wrong with these `git branch` words, if anything: an option that is not for listing, or a word that would make or
+ * rename a branch. The words are read as git reads them (R76): a value an option takes is consumed with it, so it is not mistaken
+ * for a name, and a word that is not any option's value is a branch name and is refused, whatever else is on the line. `--column`,
+ * `--color` and `--abbrev` take a value only written `--column=x`: a word after one of them is a name.
+ */
 function branchProblem(args: string[]): string | null {
-  let listing = false;
-  let name: string | null = null;
-  for (const arg of args) {
+  for (let at = 0; at < args.length; at += 1) {
+    const arg = args[at];
+    if (arg === '--') return args[at + 1] ?? null; // everything after it is a name
     if (arg.startsWith('--')) {
-      const long = arg.slice(2).split('=')[0];
+      const [long, ...attached] = arg.slice(2).split('=');
       if (!BRANCH_LONG.has(long)) return arg;
-      listing ||= BRANCH_LISTING.has(long);
+      const next = args[at + 1];
+      const takes = BRANCH_VALUE.has(long) || (BRANCH_VALUE_OR_DEFAULT.has(long) && next !== undefined && next !== '--');
+      if (attached.length === 0 && takes) at += 1; // the next word is this option's value
     } else if (arg.startsWith('-') && arg !== '-') {
       if ([...arg.slice(1)].some((letter) => !BRANCH_SHORT.has(letter))) return arg;
     } else {
-      name ??= arg;
+      return arg;
     }
   }
-  return name !== null && !listing ? name : null;
+  return null;
 }
 
 /** `git status|log|diff|show|branch`, read-only: nothing that writes a file or runs a program, and `branch` only lists. */
