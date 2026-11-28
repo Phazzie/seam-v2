@@ -6,7 +6,8 @@ import type { Ctx, Phase } from '../types.ts';
 import { unescaped } from './commandtext.ts';
 import { notOnList, TESTS_NOT_HERE, wrongUse } from './commandwhy.ts';
 
-export type Judged = { ok: true; args: string[] } | { ok: false; reason: string; args: string[] };
+/** An allowed command carries its arguments, and, if it is a seam command, `seam`: the subcommand and what follows it, in lower case. */
+export type Judged = { ok: true; args: string[]; seam?: string[] } | { ok: false; reason: string; args: string[] };
 
 const SEAM_SUBS = new Set(['report', 'status', 'request', 'init', 'install-shortcut', 'help']);
 const GIT_READS = new Set(['status', 'log', 'diff', 'show']);
@@ -37,7 +38,7 @@ const refuse = (reason: string, args: string[]): Judged => ({ ok: false, reason,
 
 /** `seam <sub> ...`: only the listed subcommands. */
 function seamCommand(sub: string | undefined, args: string[]): Judged {
-  if (sub !== undefined && SEAM_SUBS.has(sub.toLowerCase())) return ok(args);
+  if (sub !== undefined && SEAM_SUBS.has(sub.toLowerCase())) return { ok: true, args, seam: [sub, ...args].map((word) => word.toLowerCase()) };
   return refuse(wrongUse(`seam ${sub ?? ''}`.trim(), 'that is not one of the seam commands'), [...(sub === undefined ? [] : [sub]), ...args]);
 }
 

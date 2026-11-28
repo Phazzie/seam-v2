@@ -118,6 +118,24 @@ function misleading(tool: string | undefined, command: string, words: string[]):
   return null;
 }
 
+/** What a halted run still lets the main AI run (R77): the report, and asking the owner for a `park` or an `edit`. Both only read state or write a request. */
+function recoveryCommand(seam: string[] | undefined): boolean {
+  if (seam === undefined) return false;
+  const [sub, kind, ...more] = seam;
+  return sub === 'report' || sub === 'status' || (sub === 'request' && more.length === 0 && (kind === 'park' || kind === 'edit'));
+}
+
+/**
+ * May this command run while the run is halted? Only if it may run at all and is `seam report`, `seam status`, `seam request park`
+ * or `seam request edit` (R77: the owner must be able to start recovering, and the AI to ask for it).
+ */
+export function mayRunWhileHalted(input: HookInput, ctx: Ctx): boolean {
+  if (decideCommand(input, ctx).kind !== 'allow') return false;
+  const words = scan(String(input.tool_input?.command ?? '')).segments[0] ?? [];
+  const judged = judge(words, input.cwd, ctx);
+  return judged.ok && recoveryCommand(judged.seam);
+}
+
 /** May this Bash or PowerShell call run? A refusal says why, and what to do instead. */
 export function decideCommand(input: HookInput, ctx: Ctx): Decision {
   if (roleOf(input) !== 'main') return deny(why.NOT_MAIN);

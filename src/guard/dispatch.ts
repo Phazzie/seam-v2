@@ -4,7 +4,7 @@
 // be read (R47), so a write decided by the kind of path alone stays as quick as a read.
 //
 // A halted run (the main AI changed a protected file, 6.6) stops every write and every command here, before
-// the decisions; reads stay open so the owner can look. A write or command that is let through is noted as
+// the decisions, except the few commands that start the owner's recovery (R77); reads stay open so the owner can look. A write or command that is let through is noted as
 // under way, with the files a write may change, for the tamper check that follows it (inflight.ts).
 import type { Ctx, Decision, HookInput } from '../types.ts';
 import type { HookEvent } from './output.ts';
@@ -15,7 +15,10 @@ const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
 
 const ALLOW: Decision = { kind: 'allow' };
 
-const halted = (why: string): Decision => ({ kind: 'deny', reason: `The run is halted: ${why}. Nothing can be written or run until the owner clears it.` });
+const halted = (why: string): Decision => ({
+  kind: 'deny',
+  reason: `The run is halted: ${why}. Nothing can be written or run until the owner clears it: open the Seam Approve window on your desktop to look at it and carry on. (Meanwhile seam report is allowed, and seam request park or seam request edit to ask the owner.)`,
+});
 
 /** The files a write tool names, from the repo root (folded on Windows), for the note of what it may change. */
 async function writtenBy(input: HookInput, ctx: Ctx): Promise<string[]> {
@@ -47,9 +50,13 @@ export async function decide(input: HookInput, event: HookEvent, ctx: Ctx, resto
   }
   const tool = input.tool_name ?? '';
   const writes = WRITE_TOOLS.has(tool);
-  if ((writes || COMMAND_TOOLS.has(tool)) && ctx.state.halted !== null) return halted(ctx.state.halted);
+  if (writes && ctx.state.halted !== null) return halted(ctx.state.halted);
   if (writes) return noteStarted(input, ctx, await (await import('./write.ts')).decideWrite(input, ctx), true);
-  if (COMMAND_TOOLS.has(tool)) return noteStarted(input, ctx, (await import('./command.ts')).decideCommand(input, ctx), false);
+  if (COMMAND_TOOLS.has(tool)) {
+    const command = await import('./command.ts');
+    if (ctx.state.halted !== null && !command.mayRunWhileHalted(input, ctx)) return halted(ctx.state.halted);
+    return noteStarted(input, ctx, command.decideCommand(input, ctx), false);
+  }
   if (READ_TOOLS.has(tool)) return (await import('./read.ts')).decideRead(input, ctx);
   return ALLOW;
 }
