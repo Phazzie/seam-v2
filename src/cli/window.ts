@@ -13,6 +13,7 @@ import type { Ctx } from '../types.ts';
 import { acceptLocked } from './accept.ts';
 import { approveProblem, approveRequest } from './approve.ts';
 import { acceptEditsLocked, changesIn, editFingerprints, hasNoRecord, listChanges, NO_RECORD_YET } from './changes.ts';
+import { repairable } from './hint.ts';
 import { SetupError } from './home.ts';
 import { THE_WINDOW, refusedOutsideWindow } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
@@ -26,7 +27,7 @@ const menu = (badRequest: boolean): string =>
   ['', 'Seam Approve', '  1) Show the report', '  2) Accept my own edits to protected files', '  3) Repair a broken record', '  4) Close',
     ...(badRequest ? ['  5) Clear the request that cannot be read'] : [])].join('\n');
 
-/** The project, null (with the reason said, and a way to put it right) if a record of it cannot be read, or 'setup' (said) if its setup is incomplete, which the window cannot mend. */
+/** The project; null (with the reason said, and a way to put it right) if a record that repair deals with cannot be read; or 'setup' (said) if its setup is incomplete or the trouble is one the window cannot mend. */
 type Loaded = Ctx | null | 'setup';
 
 function tryLoad(load: () => Ctx, io: OwnerIo): Loaded {
@@ -38,6 +39,10 @@ function tryLoad(load: () => Ctx, io: OwnerIo): Loaded {
       return 'setup';
     }
     if (!(err instanceof Error)) throw err;
+    if (!repairable(err.message)) {
+      io.say(err.message); // not a record repair deals with (the setup file, say): choosing 3 would not help
+      return 'setup';
+    }
     io.say(`${err.message} Choose 3 to put back the guard's saved copy.`); // a damaged record is what repair is for
     return null;
   }
