@@ -12,6 +12,7 @@ import { registerProject } from '../lib/paths.ts';
 import { readState, writeState } from '../lib/store.ts';
 import type { Ctx } from '../types.ts';
 import { ENV_PATH, findRoot, readEnvFile } from './home.ts';
+import { desktopFolder, installShortcut, SHORTCUT_NAME } from './shortcut.ts';
 import type { SeamEnv } from './home.ts';
 
 export interface InitOptions {
@@ -23,6 +24,9 @@ export interface InitOptions {
   /** `--legacy`: the old app, which will be protected and rebuilt beside. */
   legacy?: string;
   now?: Date;
+  /** Where the desktop shortcut is (a test hands in a folder); null for the real desktop. Only a setup being made whole again looks at it. */
+  desktopDir?: string | null;
+  platform?: NodeJS.Platform;
 }
 
 const isFolder = (path: string): boolean => {
@@ -41,6 +45,24 @@ function setupIncomplete(root: string): boolean {
 }
 
 /**
+ * After a lost data folder the desktop shortcut's target, seam-approve.cmd, is lost with it, and the window cannot open. If the "Seam Approve"
+ * shortcut is on the desktop, write the script again and point the shortcut at it (the data folder may be elsewhere now); the owner is told
+ * so. If it is not, the owner is told to run seam install-shortcut first. Never fails the setup: what went wrong is said instead.
+ */
+function shortcutNote(root: string, o: InitOptions): string {
+  const record = 'to take a fresh record of the protected files if the guard says its record is missing';
+  const install = `First run seam install-shortcut (from Claude Code) to put the "${SHORTCUT_NAME}" shortcut on the desktop; then open the window and choose "Accept my own edits" ${record}.`;
+  try {
+    const desktop = desktopFolder(o.desktopDir ?? null, o.platform);
+    if (desktop === null || !existsSync(join(desktop, `${SHORTCUT_NAME}.lnk`))) return install;
+    installShortcut({ root, dataDir: o.dataDir, pluginRoot: o.pluginRoot, desktopDir: o.desktopDir ?? null, platform: o.platform });
+    return `The "${SHORTCUT_NAME}" shortcut on your desktop works again: open it, and choose "Accept my own edits" ${record}.`;
+  } catch (err) {
+    return `${install} (The desktop shortcut could not be checked: ${(err as Error).message})`;
+  }
+}
+
+/**
  * Make an incomplete setup whole again (R77): write env.json, make sure the data folder is there and the project is listed in it, and put
  * the state's copy where the guard looks for it. The guard's record of the protected files lives in the data folder; if that was lost,
  * the owner's "accept my own edits" in the Seam Approve window takes a fresh one, so nothing the AI can run does.
@@ -52,7 +74,7 @@ function completeSetup(root: string, o: InitOptions): string {
   registerProject(root, o.dataDir);
   writeState(root, o.dataDir, readState(root));
   logLine(root, 'Seam project setup completed again', o.now);
-  return `This project's setup was incomplete and is whole again (its records folder is ${o.dataDir}). If the guard then says its record of the protected files is missing, open the Seam Approve window and choose "Accept my own edits" to take a fresh one.`;
+  return `This project's setup was incomplete and is whole again (its records folder is ${o.dataDir}). ${shortcutNote(root, o)}`;
 }
 
 /** Start the project. Returns what to tell the owner. Throws, in plain words, if it should not be started here. */

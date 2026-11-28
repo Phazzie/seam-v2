@@ -77,6 +77,12 @@ export function approveScript(root: string, pluginRoot: string): string {
   return ['@echo off', 'chcp 65001 >nul', `cd /d "${forCmd(root)}"`, `node "${forCmd(seam)}" window`, 'pause', ''].join('\r\n');
 }
 
+/** The folder the desktop shortcut goes in: the one handed in (a test), or the real desktop, which Windows may keep somewhere other than `~/Desktop` (OneDrive). Null where there is no such shortcut (not Windows). */
+export function desktopFolder(injected: string | null, platform: NodeJS.Platform = process.platform): string | null {
+  if (platform !== 'win32') return null;
+  return injected ?? powershell("[Environment]::GetFolderPath('Desktop')", 'find the desktop folder').trim();
+}
+
 export interface ShortcutOptions {
   root: string;
   dataDir: string;

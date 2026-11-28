@@ -49,7 +49,7 @@ export async function main(args: string[], env: NodeJS.ProcessEnv, cwd: string, 
         out(HELP);
         return 0;
       case 'init':
-        out(initProject({ cwd, dataDir: dataDirForInit(cli), pluginRoot, appRoot: flagValue(rest, '--app-root'), legacy: flagValue(rest, '--legacy') }));
+        out(initProject({ cwd, dataDir: dataDirForInit(cli), pluginRoot, appRoot: flagValue(rest, '--app-root'), legacy: flagValue(rest, '--legacy'), desktopDir: cli.desktopDir }));
         return 0;
       case 'report':
       case 'status':
