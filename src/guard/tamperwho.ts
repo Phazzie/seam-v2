@@ -18,8 +18,11 @@ function who(input: HookInput): string {
   return role === 'main' ? 'the main AI' : `the ${role} agent`;
 }
 
-/** Record what the changes at `paths` cost. Changes `rec.unattributed`; the caller saves the record. */
-export function consequences(ctx: Ctx, input: HookInput, rec: TamperRecord, paths: string[], others: number): void {
+/**
+ * Record what the changes at `paths` cost. `reason` words the halt when the cause is not just "changed a protected file"
+ * (the settings that could switch the guard off). Changes `rec.unattributed`; the caller saves the record.
+ */
+export function consequences(ctx: Ctx, input: HookInput, rec: TamperRecord, paths: string[], others: number, reason?: string): void {
   if (paths.length === 0) {
     rec.unattributed = 0; // a check with nothing wrong in it ends the run of unattributed ones
     return;
@@ -39,7 +42,7 @@ export function consequences(ctx: Ctx, input: HookInput, rec: TamperRecord, path
     logLine(ctx.root, `Strike ${strikes[turn]} for ${turn}: the builder changed ${paths.join(', ')} outside the rules.`);
   } else {
     rec.unattributed = 0;
-    halted ??= `${who(input)} changed a protected file: ${first}`;
+    halted ??= reason ?? `${who(input)} changed a protected file: ${first}`;
   }
   if (halted !== state.halted) logLine(ctx.root, `Halted: ${halted}`);
   writeState(ctx.root, ctx.dataDir, { ...state, strikes, halted });

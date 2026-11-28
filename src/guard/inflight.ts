@@ -59,21 +59,30 @@ export function started(ctx: Ctx, input: HookInput, paths: string[]): void {
 
 export interface Finished { paths: string[]; others: number; otherPaths: string[] }
 
+/** What this call was let through for, and what else is under way, from the calls noted. */
+function summary(calls: Calls, id: string): Finished {
+  const others = calls.filter((call) => call.id !== id);
+  return { paths: calls.find((call) => call.id === id)?.paths ?? [], others: others.length, otherPaths: others.flatMap((call) => call.paths) };
+}
+
 /**
- * A call is over. Returns the files it was allowed to change (none if it was never noted: the guard did not
- * allow it, or its before-hook crashed), how many other calls are still under way, and the files those were allowed to
- * change: a write of theirs may already be on disk, and it is theirs to accept when their own after-hook comes.
+ * Where a call stands, without changing the note: the files it was allowed to change (none if it was never noted: the
+ * guard did not allow it, or its before-hook crashed), how many other calls are under way, and the files those were
+ * allowed to change. A write of theirs may already be on disk, and it is theirs to accept when their own after-hook comes.
+ * The tamper check looks first and strikes its own call off only when it has settled (`finished`), so a check by another
+ * call in between still sees this one under way.
  */
+export function inFlight(ctx: Ctx, input: HookInput): Finished {
+  return summary(readCalls(ctx), callId(input));
+}
+
+/** A call is over: strike it off, and say where it stood (as `inFlight` does, from before it was struck off). */
 export function finished(ctx: Ctx, input: HookInput): Finished {
   const id = callId(input);
-  const done = (calls: Calls): Finished => {
-    const others = calls.filter((call) => call.id !== id);
-    return { paths: calls.find((call) => call.id === id)?.paths ?? [], others: others.length, otherPaths: others.flatMap((call) => call.paths) };
-  };
-  if (!NOTED_TOOLS.has(input.tool_name ?? '')) return done(readCalls(ctx));
+  if (!NOTED_TOOLS.has(input.tool_name ?? '')) return summary(readCalls(ctx), id);
   return withLock(ctx.root, () => {
     const calls = readCalls(ctx);
     save(ctx, calls.filter((call) => call.id !== id));
-    return done(calls);
+    return summary(calls, id);
   });
 }

@@ -11,7 +11,7 @@ import { STATE_PATH } from '../formats/state.ts';
 import { logLine } from '../lib/log.ts';
 import { withLock } from '../lib/store.ts';
 import type { Ctx, HookInput } from '../types.ts';
-import { finished } from './inflight.ts';
+import { finished, inFlight } from './inflight.ts';
 import { isTurnBuilder, turnKey, verifierFor } from './tamperbuilder.ts';
 import type { Verifier } from './tamperbuilder.ts';
 import { judge, PUT_BACK } from './tamperjudge.ts';
@@ -73,17 +73,19 @@ function settle(ctx: Ctx, input: HookInput, call: Call, found: Finding[], restor
   }
   for (const path of restored) {
     problems.push(`${path} was changed ${PUT_BACK}`);
-    hurt.push(path);
+    if (!call.allowed.has(fold(path))) hurt.push(path); // not charged to a call that was let through to write it
   }
   const c: Case = { ctx, rec, allowed: call.allowed, builder: isTurnBuilder(ctx, input), turn: turnKey(ctx), verify: call.verify };
+  let halt: string | undefined;
   for (const f of found) {
     const verdict = judge(c, f);
     if (verdict !== null) {
       problems.push(verdict.problem);
       hurt.push(verdict.key);
+      halt ??= verdict.halt;
     }
   }
-  consequences(ctx, input, rec, hurt, call.others);
+  consequences(ctx, input, rec, hurt, call.others, halt);
   if (JSON.stringify(rec) !== before) saveRecord(ctx, rec);
   return problems;
 }
@@ -104,7 +106,15 @@ function forgetUnattributed(ctx: Ctx, rec: TamperRecord): void {
  * A file that another call under way was let through for is left alone: its own after-hook accepts it.
  */
 export async function checkTamper(input: HookInput, ctx: Ctx, restored: readonly string[] = []): Promise<{ problems: string[] }> {
-  const call = finished(ctx, input);
+  try {
+    return await check(input, ctx, restored);
+  } finally {
+    finished(ctx, input); // only now: until the check has settled, another call's check must still see this one under way
+  }
+}
+
+async function check(input: HookInput, ctx: Ctx, restored: readonly string[]): Promise<{ problems: string[] }> {
+  const call = inFlight(ctx, input);
   const rec = loadRecord(ctx);
   if (rec === null) return { problems: ctx.lock === null ? [] : [NO_RECORD] };
   const allowed = new Set(call.paths.map(fold));
