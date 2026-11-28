@@ -7,6 +7,7 @@
 //   3. a describer reads only the comment-stripped copy under .seam/review;
 //   4. everyone else (main, surveyor, checker, design, read-only agents) reads freely.
 import { basename } from 'node:path';
+import { alternatives } from '../lib/braces.ts';
 import { rel, resolveReal } from '../lib/paths.ts';
 import { roleOf } from '../lib/roles.ts';
 import type { Ctx, Decision, HookInput } from '../types.ts';
@@ -26,11 +27,24 @@ const EXAMPLE = /^\.env\.example$/i;
 /** Where the stage 3 script puts the stripped copy a describer reads. */
 const REVIEW = '.seam/review';
 
+/**
+ * Could this glob match an env file? Each alternative its braces stand for is looked at (R78: `{.env.local,src/*.ts}` is two
+ * patterns, not one ending in `*.ts}`), by the last piece after a separator. A glob with too many alternatives to go through is
+ * refused, as one that could.
+ */
+function globNamesEnvFile(glob: string): boolean {
+  const each = alternatives(glob);
+  if (each === null) return true;
+  return each.some((alternative) => {
+    const pattern = alternative.split(/[\\/]/).at(-1) ?? '';
+    return ENV_PATTERN.test(pattern) && !EXAMPLE.test(pattern);
+  });
+}
+
 /** Does the call name an env file, by its path or in a pattern that could match one? */
 function namesEnvFile(look: Look): boolean {
   const named = [...look.roots, ...look.reaches].map((place) => basename(place));
-  const pattern = look.filter?.split(/[\\/]/).at(-1) ?? '';
-  return named.some((name) => ENV_FILE.test(name) && !EXAMPLE.test(name)) || (ENV_PATTERN.test(pattern) && !EXAMPLE.test(pattern));
+  return named.some((name) => ENV_FILE.test(name) && !EXAMPLE.test(name)) || (look.filter !== undefined && globNamesEnvFile(look.filter));
 }
 
 /** A describer reads only inside the review folder, and a search of it must say where. */
