@@ -8,8 +8,8 @@ import { someNode } from './rulewalk.ts';
 /** `fs`, `node:fs`, `fs/promises`, `node:fs/promises`, and `module` (for `createRequire`). */
 const BANNED_MODULE = /^(?:node:)?(?:fs(?:\/.*)?|module)$/;
 const PROCESS_MODULE = /^(?:node:)?process$/;
-/** What `process` hands out that reaches the machine without an import. */
-const PROCESS_ESCAPES = new Set(['binding', 'dlopen', 'mainModule']);
+/** What `process` hands out that reaches the machine without an import (`process.getBuiltinModule('fs')` is `require('fs')`, whatever it is called with). */
+const PROCESS_ESCAPES = new Set(['binding', 'dlopen', 'mainModule', 'getBuiltinModule']);
 const GLOBALS = new Set(['globalThis', 'global', 'self', 'window']);
 
 /** `(process as X)`, `(process)` and `process!` are all just `process`. */

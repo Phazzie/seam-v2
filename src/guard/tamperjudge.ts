@@ -8,6 +8,7 @@ import { absOf, fold, hashOf, measure } from './tamperrecord.ts';
 import type { Entry, TamperRecord } from './tamperrecord.ts';
 import { look } from './tamperscan.ts';
 import type { Finding } from './tamperscan.ts';
+import { SWITCH_OFF, settingsProblem } from './tampersettings.ts';
 import type { Verifier } from './tamperbuilder.ts';
 import { takeIn } from './tampertake.ts';
 
@@ -23,8 +24,8 @@ export interface Case {
   verify: Verifier | null;
 }
 
-/** A tamper, in plain words. */
-export interface Verdict { problem: string; key: string }
+/** A tamper, in plain words. `halt` words the halt when the cause is something other than a protected file changed. */
+export interface Verdict { problem: string; key: string; halt?: string }
 
 export const PUT_BACK = 'outside the rules and has been put back';
 
@@ -40,7 +41,8 @@ function undo(c: Case, key: string, abs: string, entry: Entry, verb: string, why
 function judgeKnown(c: Case, key: string, abs: string, entry: Entry): Verdict | null {
   const now = look(abs);
   if (now !== null) {
-    if (hashOf(abs) === entry.hash) {
+    // A file of another size is changed, and is not read at all: a huge replacement is put back, never hashed whole.
+    if (now.size === entry.size && hashOf(abs) === entry.hash) {
       c.rec.files[key] = { ...entry, size: now.size, mtimeMs: now.mtimeMs }; // only touched
       return null;
     }
@@ -60,22 +62,53 @@ function judgeKnown(c: Case, key: string, abs: string, entry: Entry): Verdict | 
   return undo(c, key, abs, entry, now === null ? 'deleted' : 'changed');
 }
 
-function judgeNew(c: Case, key: string, abs: string): Verdict | null {
-  if (look(abs) === null) return null; // gone again
-  if (c.allowed.has(fold(key))) {
-    takeIn(c.ctx, c.rec, key);
-    return null;
-  }
+/** Move a new file that has no place there out of the project. */
+function aside(c: Case, key: string, abs: string): Verdict {
   const moved = moveAside(c.ctx, key, abs);
   if (typeof moved === 'string') return { key, problem: `${key} is a new file that has no place there and could not be moved aside (${moved})` };
   logLine(c.ctx.root, `Moved ${key} aside (a new file with no place there) to ${moved.to}`);
   return { key, problem: `${key} is a new file that has no place there${moved.big ? ' (over 2 MB)' : ''} and has been moved aside` };
 }
 
+function judgeNew(c: Case, key: string, abs: string): Verdict | null {
+  if (look(abs) === null) return null; // gone again
+  if (!c.allowed.has(fold(key))) return aside(c, key, abs);
+  takeIn(c.ctx, c.rec, key);
+  return null;
+}
+
+/**
+ * The one protected file that Claude Code itself writes: when the owner answers "don't ask again" to a permission
+ * prompt it saves the answer to `.claude/settings.local.json`. A change to it is taken into the record, with a line in
+ * the log, only when every setting that changed is `permissions` (tampersettings.ts). Any other change, or a file that
+ * is not a JSON object, is put back (or moved aside, if the file is new) and halts the run. (The write decision still
+ * refuses the AI's own writes to it.)
+ */
+const OWNER_SETTINGS = /^\.claude\/settings\.local\.json$/i;
+
+function judgeSettings(c: Case, key: string, abs: string): Verdict | null {
+  const entry = c.rec.files[key];
+  const now = look(abs);
+  if (entry === undefined && now === null) return null;
+  if (entry !== undefined && now !== null && now.size === entry.size && hashOf(abs) === entry.hash) {
+    c.rec.files[key] = { ...entry, size: now.size, mtimeMs: now.mtimeMs }; // only touched
+    return null;
+  }
+  const why = settingsProblem(c.ctx, entry, now === null ? null : abs);
+  if (why === null) {
+    takeIn(c.ctx, c.rec, key);
+    logLine(c.ctx.root, `Claude Code updated permissions in ${key}`);
+    return null;
+  }
+  const verdict = entry === undefined ? aside(c, key, abs) : undo(c, key, abs, entry, now === null ? 'deleted' : 'changed', why);
+  return { ...verdict, halt: SWITCH_OFF };
+}
+
 /** Settle one finding against the record as it is now. Null means there is nothing to report. */
 export function judge(c: Case, found: Finding): Verdict | null {
   const { key } = found;
   const abs = absOf(c.ctx, key);
+  if (OWNER_SETTINGS.test(key)) return judgeSettings(c, key, abs);
   if (found.kind === 'newOther') {
     if (look(abs) !== null && !c.rec.code.includes(key)) c.rec.code.push(key);
     return null;

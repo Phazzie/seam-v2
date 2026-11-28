@@ -19,8 +19,10 @@ import { classify, inBuildOutput, rel, resolveReal } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
 import { roleOf } from '../lib/roles.ts';
 import type { Ctx, Decision, HookInput, Phase } from '../types.ts';
+import { PLAN_PATH } from '../formats/plan.ts';
 import { proposedContent } from './proposed.ts';
 import { targetsOf } from './request.ts';
+import { planProblem } from './writeplan.ts';
 import * as why from './writewhy.ts';
 
 export { proposedContent } from './proposed.ts';
@@ -101,12 +103,21 @@ async function decideContract(input: HookInput, ctx: Ctx, t: Target): Promise<De
   return problems.length === 0 ? ALLOW : deny(why.refusal(t.name, problems, []));
 }
 
+/** plan/plan.json itself: what it would hold afterwards has to be a valid plan (writeplan.ts). */
+function decidePlanFile(input: HookInput, t: Target): Decision {
+  const proposed = proposedContent(input, currentText(input, t.real));
+  if (!proposed.ok) return deny(proposed.reason);
+  const problem = planProblem(proposed.text);
+  return problem === null ? ALLOW : deny(problem);
+}
+
 function decideMain(input: HookInput, ctx: Ctx, t: Target): Promise<Decision> | Decision {
   const { phase } = ctx.state;
   switch (t.cls) {
     case 'plan':
       if (!PLANNING.has(phase)) return deny(why.planFrozen(phase));
-      return PLAN_FILE.test(t.name) ? ALLOW : deny(why.PLAN_HOLDS);
+      if (!PLAN_FILE.test(t.name)) return deny(why.PLAN_HOLDS);
+      return t.inRepo === PLAN_PATH ? decidePlanFile(input, t) : ALLOW;
     case 'contracts': return decideContract(input, ctx, t);
     case 'tests': return phase === 'tests' ? ALLOW : deny(why.testsFrozen(phase));
     case 'app-code': return deny(why.ONLY_BUILDERS);
@@ -141,7 +152,8 @@ async function decideFile(input: HookInput, ctx: Ctx, t: Target): Promise<Decisi
   if (writesNothing !== undefined) return deny(writesNothing);
   // Only main and builder are left.
   if (t.cls === 'outside') return role === 'main' ? decideOutside(t) : deny(why.OUTSIDE_MAIN_ONLY);
-  if (t.cls === 'ignored' && t.inRepo !== null && inBuildOutput(t.inRepo, t.inApp)) return deny(why.IN_BUILD_OUTPUT);
+  // Whatever place it sits in (tests/node_modules is still node_modules), before the rules of that place, for main and builder alike.
+  if (t.inRepo !== null && inBuildOutput(t.inRepo, t.inApp)) return deny(why.IN_BUILD_OUTPUT);
   if (t.cls === 'app-code' && t.planned === null) return deny(why.notInPlan(t.name));
   return role === 'main' ? decideMain(input, ctx, t) : decideBuilder(input, ctx, t);
 }

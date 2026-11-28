@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test } from 'vitest';
 import { PHASES } from '../../src/types.ts';
 import type { Phase } from '../../src/types.ts';
 import { asBuilder, asMain } from '../helpers/app.ts';
-import { TOTAL, total } from '../helpers/code.ts';
+import { PLAN_TEXT, TOTAL, total } from '../helpers/code.ts';
 import { ask, edits, inPhase, isAllowed, reasonOf, scene, writes } from '../helpers/decide.ts';
 import type { Scene } from '../helpers/decide.ts';
 
@@ -23,7 +23,7 @@ const WITH_CODE = 'export const Id = z.string().refine((v) => v.length > 2);\n';
 describe('rule 3: the plan, in the planning phases only', () => {
   const PLANNING: Phase[] = ['setup', 'survey', 'plan1', 'plan2'];
   test.each(PLANNING)('allowed in %s', async (phase) => {
-    await isAllowed(mainWrites('plan/plan.json', phase));
+    await isAllowed(mainWrites('plan/plan.json', phase, PLAN_TEXT));
     await isAllowed(mainWrites('plan/FEATURES.md', phase));
   });
   test.each(phasesOtherThan(PLANNING))('frozen in %s, and the reason says so', async (phase) => {

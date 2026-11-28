@@ -1,13 +1,16 @@
 // Code samples for the cheat tests: the approved total with its header, its skeleton, and
 // the bent versions a cheating builder might try. Everything is built from the practice
 // plan, so a header here always says exactly what the plan says.
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { formatHeader } from '../../src/formats/header.ts';
 import { loadPlan } from '../../src/formats/plan.ts';
 import type { FilePlan } from '../../src/formats/plan.ts';
 
 export const FIXTURE = resolve(import.meta.dirname, '../fixtures/practice-app');
 export const TOTAL = 'src/pricing/total.ts';
+/** The practice plan, as plan/plan.json holds it: a plan the main AI may write in a planning phase. */
+export const PLAN_TEXT = readFileSync(join(FIXTURE, 'plan/plan.json'), 'utf8');
 
 /** The practice plan's file entry for `path`, with the id of the seam it belongs to. */
 export function planFile(path: string): { seam: string; file: FilePlan } {

@@ -27,17 +27,20 @@ export const KEEP_LIMIT = 16 * 1024 * 1024;
 /** A new file bigger than this is moved aside without being read at all (Review Focus 5). */
 export const BIG_FILE = 2 * 1024 * 1024;
 
+/** Where a project is and where its record is kept: all that reading or saving the record needs. */
+export type Home = Pick<Ctx, 'root' | 'dataDir'>;
+
 /** A path as it is compared: lower case on Windows, where the file system does not tell `Plan` from `plan`. */
 export const fold = (path: string): string => (WIN ? path.toLowerCase() : path);
 
 /** The project's own folder in the data folder (the one that also holds the copy of state.json). */
-export const recordFolder = (ctx: Ctx): string => join(ctx.dataDir, 'mirror', rootKey(ctx.root));
+export const recordFolder = (ctx: Home): string => join(ctx.dataDir, 'mirror', rootKey(ctx.root));
 
 /** Where a path from the repo root (forward slashes) is on disk. */
-export const absOf = (ctx: Ctx, key: string): string => join(ctx.root, ...key.split('/'));
+export const absOf = (ctx: Home, key: string): string => join(ctx.root, ...key.split('/'));
 
 /** The saved record, or null if there is none yet. Throws a plain error if it is there and does not fit. */
-export function loadRecord(ctx: Ctx): TamperRecord | null {
+export function loadRecord(ctx: Home): TamperRecord | null {
   const file = join(recordFolder(ctx), 'protected.json');
   let text: string;
   try {
@@ -56,7 +59,7 @@ export function loadRecord(ctx: Ctx): TamperRecord | null {
 }
 
 /** Save the record in one step. */
-export function saveRecord(ctx: Ctx, rec: TamperRecord): void {
+export function saveRecord(ctx: Home, rec: TamperRecord): void {
   const folder = recordFolder(ctx);
   mkdirSync(folder, { recursive: true });
   atomicWrite(join(folder, 'protected.json'), `${JSON.stringify(rec)}\n`);
@@ -72,7 +75,7 @@ export const hashOf = (abs: string): string => createHash('sha256').update(readF
  * Read a file for the record: its hash, size and time, and keep a copy named by the hash. The time is taken
  * before the content is read, so a file changed in between looks changed later, never unchanged.
  */
-export function measure(ctx: Ctx, abs: string): Entry {
+export function measure(ctx: Home, abs: string): Entry {
   const { size, mtimeMs } = statSync(abs);
   const bytes = readFileSync(abs);
   const hash = createHash('sha256').update(bytes).digest('hex');
@@ -85,7 +88,7 @@ export function measure(ctx: Ctx, abs: string): Entry {
 }
 
 /** The kept copy of a file's content, or null if none was kept (it was too big). */
-export function blobOf(ctx: Ctx, hash: string): Buffer | null {
+export function blobOf(ctx: Home, hash: string): Buffer | null {
   try {
     return readFileSync(join(recordFolder(ctx), 'blobs', hash));
   } catch (err) {

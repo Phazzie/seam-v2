@@ -6,13 +6,13 @@ import { dirname, join } from 'node:path';
 import { atomicWrite, errorCode, retryBusy } from '../lib/atomic.ts';
 import type { Ctx } from '../types.ts';
 import { BIG_FILE, blobOf } from './tamperrecord.ts';
-import type { Entry } from './tamperrecord.ts';
+import type { Entry, Home } from './tamperrecord.ts';
 
 /**
  * Put a file back as it was recorded. Returns the file's new size and time (for the record), or the plain
  * reason it could not be put back (no copy was kept of a very large file, or the file system said no).
  */
-export function putBack(ctx: Ctx, abs: string, entry: Entry): Entry | string {
+export function putBack(ctx: Home, abs: string, entry: Entry): Entry | string {
   const bytes = blobOf(ctx, entry.hash);
   if (bytes === null) return 'no copy of it was kept, because it is very large';
   try {

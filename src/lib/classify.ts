@@ -139,9 +139,11 @@ export function protectedClass(ctx: Ctx, places: Places, p: string, inRepo: stri
   }
   // Every protected place comes before "ignored", so a node_modules folder inside tests/ or contracts/
   // cannot turn them into something the guard lets through.
-  if (hasFirst(views, TEST_DIRS)) return 'tests';
-  if (hasFirst(views, 'contracts')) return 'contracts';
-  if (hasFirst(views, 'fixtures') || views.some((v) => /^probes\/fixtures(?:\/|$)/.test(v.rel))) return 'fixtures';
+  // A config file's name wins inside them: tests/package.json, tests/.env and tests/vitest.config.ts run code or change
+  // what counts as code, and a folder the main AI may write in (tests, in the tests phase) must not make them writable.
+  const frozen = hasFirst(views, TEST_DIRS) ? 'tests' : hasFirst(views, 'contracts') ? 'contracts'
+    : hasFirst(views, 'fixtures') || views.some((v) => /^probes\/fixtures(?:\/|$)/.test(v.rel)) ? 'fixtures' : null;
+  if (frozen !== null) return CONFIG_NAME.test(basename(inRepo)) || inConfigDir(inRepo) ? 'config-file' : frozen;
   if (covered(views, plan?.generated ?? [])) return 'generated';
   // `.git/` holds git's own settings, hooks and exclude list: all of them can change what counts as code.
   if (CONFIG_NAME.test(basename(inRepo)) || inConfigDir(inRepo) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';

@@ -11,12 +11,13 @@ import { STATE_PATH } from '../formats/state.ts';
 import { logLine } from '../lib/log.ts';
 import { withLock } from '../lib/store.ts';
 import type { Ctx, HookInput } from '../types.ts';
-import { finished } from './inflight.ts';
+import { finished, inFlight } from './inflight.ts';
 import { isTurnBuilder, turnKey, verifierFor } from './tamperbuilder.ts';
 import type { Verifier } from './tamperbuilder.ts';
 import { judge, PUT_BACK } from './tamperjudge.ts';
 import type { Case } from './tamperjudge.ts';
 import { emptyRecord, fold, loadRecord, measure, saveRecord } from './tamperrecord.ts';
+import type { TamperRecord } from './tamperrecord.ts';
 import { fullScan, newByWrite, quickScan } from './tamperscan.ts';
 import type { Finding } from './tamperscan.ts';
 import { copyState, restoreState, stateDiffers } from './tamperstate.ts';
@@ -58,7 +59,7 @@ export function acceptChange(ctx: Ctx, relPath: string): void {
 interface Call { allowed: ReadonlySet<string>; verify: Verifier | null; others: number }
 
 /** Settle what the scan found, under the lock and against the record as it is by then. Returns the problems, in plain words. */
-function settle(ctx: Ctx, input: HookInput, call: Call, found: Finding[]): string[] {
+function settle(ctx: Ctx, input: HookInput, call: Call, found: Finding[], restored: readonly string[]): string[] {
   const rec = loadRecord(ctx);
   if (rec === null) return [];
   const before = JSON.stringify(rec);
@@ -70,31 +71,61 @@ function settle(ctx: Ctx, input: HookInput, call: Call, found: Finding[]): strin
     problems.push(`${STATE_PATH} was changed ${PUT_BACK}`);
     hurt.push(STATE_PATH);
   }
+  for (const path of restored) {
+    problems.push(`${path} was changed ${PUT_BACK}`);
+    if (!call.allowed.has(fold(path))) hurt.push(path); // not charged to a call that was let through to write it
+  }
   const c: Case = { ctx, rec, allowed: call.allowed, builder: isTurnBuilder(ctx, input), turn: turnKey(ctx), verify: call.verify };
+  let halt: string | undefined;
   for (const f of found) {
     const verdict = judge(c, f);
     if (verdict !== null) {
       problems.push(verdict.problem);
       hurt.push(verdict.key);
+      halt ??= verdict.halt;
     }
   }
-  consequences(ctx, input, rec, hurt, call.others);
+  consequences(ctx, input, rec, hurt, call.others, halt);
   if (JSON.stringify(rec) !== before) saveRecord(ctx, rec);
   return problems;
 }
 
+/** The count of changes in a row that nobody could be blamed for starts again at the first check that finds nothing (15.16). */
+function forgetUnattributed(ctx: Ctx, rec: TamperRecord): void {
+  if (rec.unattributed === 0) return;
+  withLock(ctx.root, () => {
+    const now = loadRecord(ctx);
+    if (now !== null && now.unattributed > 0) saveRecord(ctx, { ...now, unattributed: 0 });
+  });
+}
+
 /**
  * After a tool ran: what changed that should not have, in plain words (none if nothing did). It is async because
- * the check of the turn builder's own file loads the TypeScript parser, and only then.
+ * the check of the turn builder's own file loads the TypeScript parser, and only then. `restored` are record files
+ * the hook already had to put back to build its context (see tamperrepair.ts): they count as changes, here.
+ * A file that another call under way was let through for is left alone: its own after-hook accepts it.
  */
-export async function checkTamper(input: HookInput, ctx: Ctx): Promise<{ problems: string[] }> {
-  const call = finished(ctx, input);
+export async function checkTamper(input: HookInput, ctx: Ctx, restored: readonly string[] = []): Promise<{ problems: string[] }> {
+  try {
+    return await check(input, ctx, restored);
+  } finally {
+    finished(ctx, input); // only now: until the check has settled, another call's check must still see this one under way
+  }
+}
+
+async function check(input: HookInput, ctx: Ctx, restored: readonly string[]): Promise<{ problems: string[] }> {
+  const call = inFlight(ctx, input);
   const rec = loadRecord(ctx);
   if (rec === null) return { problems: ctx.lock === null ? [] : [NO_RECORD] };
-  const found = FILE_TOOLS.has(input.tool_name ?? '') ? quickScan(ctx, rec) : fullScan(ctx, rec);
-  if (call.paths.length > 0) found.push(...newByWrite(ctx, rec, call.paths.map(fold)).filter((f) => !found.some((g) => g.key === f.key)));
-  if (found.length === 0 && !stateDiffers(ctx)) return { problems: [] };
   const allowed = new Set(call.paths.map(fold));
+  const theirs = new Set(call.otherPaths.map(fold));
+  const scanned = FILE_TOOLS.has(input.tool_name ?? '') ? quickScan(ctx, rec) : fullScan(ctx, rec);
+  const found = [...scanned, ...newByWrite(ctx, rec, [...allowed]).filter((f) => !scanned.some((g) => g.key === f.key))]
+    .filter((f) => allowed.has(fold(f.key)) || !theirs.has(fold(f.key)));
+  if (found.length === 0 && restored.length === 0 && !stateDiffers(ctx)) {
+    forgetUnattributed(ctx, rec);
+    return { problems: [] };
+  }
   const verify = await verifierFor(ctx, input, found, allowed);
-  return { problems: withLock(ctx.root, () => settle(ctx, input, { allowed, verify, others: call.others }, found)) };
+  return { problems: withLock(ctx.root, () => settle(ctx, input, { allowed, verify, others: call.others }, found, restored)) };
 }

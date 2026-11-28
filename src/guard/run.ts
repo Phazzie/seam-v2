@@ -11,7 +11,7 @@ import { readGuardEnv } from '../config/env.ts';
 import type { GuardEnv } from '../config/env.ts';
 import { touchHeartbeat } from '../lib/heartbeat.ts';
 import { extendedPathProblem, isPathRefusal, staysOnNetwork, streamPathProblem } from '../lib/pathcheck.ts';
-import type { HookInput } from '../types.ts';
+import type { Ctx, HookInput } from '../types.ts';
 import { buildCtx } from './context.ts';
 import { raceDeadline } from './deadline.ts';
 import { decide } from './dispatch.ts';
@@ -82,8 +82,26 @@ async function inSeamProject(run: Run, found: Extract<Found, { kind: 'seam' }>):
   }
   if (env.forceThrow) throw new Error('SEAM_TEST_FORCE_THROW is set');
   if (env.forceHang) await (run.options.stall ?? waitForever)();
-  const decision = await decide(input, event, buildCtx(found.root, env.dataDir, env.pluginRoot, now));
+  const { ctx, restored } = await contextOf(run, found.root, env.dataDir, env.pluginRoot, now);
+  const decision = await decide(input, event, ctx, restored);
   return decision.kind === 'allow' ? SILENT : deny(run, decision.reason);
+}
+
+/**
+ * The context for a decision. After a tool ran, a plan, lock or state file that was overwritten with text that cannot be
+ * read is put back first (tamperrepair.ts), so the tamper check can run and say so instead of every call being refused
+ * with an internal error for good; `restored` are the files it put back. Before a tool, and when there was nothing to
+ * put back, the error stands (the guard fails closed).
+ */
+async function contextOf(run: Run, root: string, dataDir: string, pluginRoot: string, now: Date): Promise<{ ctx: Ctx; restored: string[] }> {
+  try {
+    return { ctx: buildCtx(root, dataDir, pluginRoot, now), restored: [] };
+  } catch (err) {
+    if (run.event !== 'PostToolUse') throw err;
+    const restored = (await import('./tamperrepair.ts')).restoreBroken({ root, dataDir });
+    if (restored.length === 0) throw err;
+    return { ctx: buildCtx(root, dataDir, pluginRoot, now), restored };
+  }
 }
 
 async function guarded(run: Run): Promise<HookOutput> {

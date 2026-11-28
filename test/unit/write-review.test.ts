@@ -8,7 +8,7 @@ import type { HookInput } from '../../src/types.ts';
 import { streamPathProblem } from '../../src/lib/pathcheck.ts';
 import { asBuilder, asChecker, asMain, makeApp } from '../helpers/app.ts';
 import { expectAllowed, expectDenied, pre, write } from '../helpers/calls.ts';
-import { TOTAL, total } from '../helpers/code.ts';
+import { PLAN_TEXT, TOTAL, total } from '../helpers/code.ts';
 import { ask, asInput, inPhase, isAllowed, reasonOf, scene, theBuilder, writes } from '../helpers/decide.ts';
 import type { Scene } from '../helpers/decide.ts';
 import { blocksOf, call, reasonOf as hookReason } from '../helpers/inproc.ts';
@@ -24,7 +24,7 @@ beforeAll(async () => {
 describe('R50: under plan/ the main AI writes notes (.md) and json only', () => {
   const PLANNING = ['setup', 'survey', 'plan1', 'plan2'] as const;
   const HOLDS = 'plan/ holds notes (.md) and plan.json only';
-  const mainWrites = (rel: string, phase: (typeof PHASES)[number]) => writes(s, rel, 'x\n', asMain(), inPhase(s, phase));
+  const mainWrites = (rel: string, phase: (typeof PHASES)[number]) => writes(s, rel, rel === 'plan/plan.json' ? PLAN_TEXT : 'x\n', asMain(), inPhase(s, phase));
 
   test.each(['plan/evil.ts', 'plan/evil.mjs', 'plan/evil.sh', 'plan/evil.sql', 'plan/evil.js', 'plan/evil.cjs', 'plan/evil.tsx', 'plan/evil.mts', 'plan/evil.ps1', 'plan/evil.bat',
     'plan/evil', 'plan/Makefile', 'plan/sub/evil.ts', 'plan/evil.md.ts', 'plan/evil.json.sh', 'plan/.hidden'])('%s is refused in every planning phase', async (rel) => {
@@ -63,7 +63,7 @@ describe('R50: under plan/ the main AI writes notes (.md) and json only', () => 
       expectDenied(await app.hook(write(app, rel, 'x\n')), /^plan\/ holds notes \(\.md\) and plan\.json only$/);
     }
     expectAllowed(await app.hook(write(app, 'plan/FEATURES.md', 'x\n')));
-    expectAllowed(await app.hook(write(app, 'plan/plan.json', '{}\n')));
+    expectAllowed(await app.hook(write(app, 'plan/plan.json', PLAN_TEXT)));
   });
 });
 

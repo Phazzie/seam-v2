@@ -19,13 +19,27 @@ const HeartbeatSchema = z.strictObject({ lastSeen: When, gaps: z.array(GapSchema
 
 export type Gap = z.infer<typeof GapSchema>;
 
+/**
+ * Is the project in the build phase? A state.json that cannot be read counts as yes: a gap is worth recording when the
+ * phase is not known, and the check-in must not fail on it (it comes before the hook's repair of that very file, so
+ * throwing here would lock the project for good after a quiet spell).
+ */
+function inBuild(root: string): boolean {
+  try {
+    return loadState(root)?.phase === 'build';
+  } catch (err) {
+    if (err instanceof Error) return true;
+    throw err;
+  }
+}
+
 /** Record a check-in at `now`. Adds a gap if the phase is `build` and the last check-in was long ago. */
 export function touchHeartbeat(root: string, now: Date): void {
   withLock(root, () => {
     const saved = loadJson(HeartbeatSchema, root, HEARTBEAT_PATH);
     const gaps = [...(saved?.gaps ?? [])];
     // A lastSeen in the future (clock change) gives a negative silence, so it is never a gap.
-    if (saved !== null && now.getTime() - Date.parse(saved.lastSeen) > HEARTBEAT_GAP_MS && loadState(root)?.phase === 'build') {
+    if (saved !== null && now.getTime() - Date.parse(saved.lastSeen) > HEARTBEAT_GAP_MS && inBuild(root)) {
       gaps.push({ from: new Date(saved.lastSeen).toISOString(), to: now.toISOString() });
     }
     atomicWrite(join(root, HEARTBEAT_PATH), `${JSON.stringify({ lastSeen: now.toISOString(), gaps }, null, 2)}\n`);
