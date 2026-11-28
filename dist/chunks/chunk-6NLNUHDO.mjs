@@ -4,4 +4,5 @@ import { dirname as __seamDirname } from 'node:path';
 const require = __seamCreateRequire(import.meta.url);
 const __filename = __seamFileURLToPath(import.meta.url);
 const __dirname = __seamDirname(__filename);
-import{a,b}from"./chunk-6LRPUFLT.mjs";import"./chunk-RUY2TN43.mjs";import"./chunk-B6GECIS6.mjs";import"./chunk-WMFWCLEU.mjs";import"./chunk-373SYFEO.mjs";import"./chunk-KOCL7EPX.mjs";import"./chunk-DCEPY3W4.mjs";import"./chunk-FNSR2DX5.mjs";export{b as recordRefusal,a as whatHappened};
+import{createHash as e}from"node:crypto";function n(t){return t.replace(/^\uFEFF/,"").replace(/\r\n?/g,`
+`)}function i(t){return e("sha256").update(n(t)).digest("hex")}function o(t){let r=t.toString("utf8");return!t.includes(0)&&Buffer.from(r,"utf8").equals(t)?i(r):e("sha256").update(t).digest("hex")}export{n as a,i as b,o as c};
