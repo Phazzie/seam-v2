@@ -22,8 +22,10 @@ function workerSaying(message: unknown): URL {
 }
 
 const input = { hook_event_name: 'PreToolUse', tool_name: 'Write', cwd: dir, tool_input: {} };
+// The stand-ins answer at once and the call ends then, so the limit only has to be far longer than a busy machine
+// (the whole suite running at once) takes to start a thread: a slow start must not look like a worker that never answered.
 const run = (workerUrl: URL, event: Supervision['event'] = 'PreToolUse') =>
-  supervise({ workerUrl, raw: '{}', env: {}, input, event, timeoutMs: 3000 });
+  supervise({ workerUrl, raw: '{}', env: {}, input, event, timeoutMs: 15_000 });
 const answer = (out: unknown): unknown => ({ kind: 'answer', out });
 
 const deny = (reason: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });

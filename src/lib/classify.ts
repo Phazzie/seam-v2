@@ -107,6 +107,47 @@ function isUserClaudeConfig(p: string): boolean {
   return inside !== null && (/^settings[^/]*\.json$/i.test(inside) || /^plugins(?:\/|$)/i.test(inside));
 }
 
+/** The places a repo path is judged against, looked up once so a whole tree can be judged without asking the file system again. */
+export interface Places { root: string; appDir: string; old: string | null }
+
+/** Where the repo, the app folder and the old app are, as resolveReal spells them. */
+export function placesOf(ctx: Ctx): Places {
+  const root = resolveReal(ctx.root, '.');
+  const old = ctx.plan?.legacyRoot != null ? resolveReal(root, ctx.plan.legacyRoot) : null;
+  return { root, appDir: resolveReal(root, ctx.appRoot || '.'), old };
+}
+
+/**
+ * The protected place a path inside the repo sits in, judged by its spelling alone (no file system, no git), or null
+ * when only git (is it ignored?) and the kind of file can tell: app code, ignored or other. `p` and `inRepo` are
+ * spelled as resolveReal and rel spell them. The first matching rule wins.
+ */
+export function protectedClass(ctx: Ctx, places: Places, p: string, inRepo: string): PathClass | null {
+  const { root, appDir, old } = places;
+  const inApp = rel(appDir, p);
+  const views: View[] = [{ base: root, rel: inRepo }];
+  if (inApp !== null && appDir !== root) views.push({ base: appDir, rel: inApp });
+  const plan = ctx.plan;
+
+  if (first(inRepo) === '.seam') return 'seam-records';
+  if (hasFirst(views, '.claude') || INSTRUCTIONS.test(basename(inRepo))) return 'claude-config';
+  if (first(inRepo) === 'plan') return 'plan';
+  if (old !== null) {
+    // The new app may live inside the old tree (old app at the repo root, new one in seam-app/).
+    const appInsideOld = appDir !== old && rel(old, appDir) !== null;
+    if (rel(old, p) !== null && !(appInsideOld && inApp !== null)) return 'legacy';
+  }
+  // Every protected place comes before "ignored", so a node_modules folder inside tests/ or contracts/
+  // cannot turn them into something the guard lets through.
+  if (hasFirst(views, TEST_DIRS)) return 'tests';
+  if (hasFirst(views, 'contracts')) return 'contracts';
+  if (hasFirst(views, 'fixtures') || views.some((v) => /^probes\/fixtures(?:\/|$)/.test(v.rel))) return 'fixtures';
+  if (covered(views, plan?.generated ?? [])) return 'generated';
+  // `.git/` holds git's own settings, hooks and exclude list: all of them can change what counts as code.
+  if (CONFIG_NAME.test(basename(inRepo)) || inConfigDir(inRepo) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';
+  return null;
+}
+
 /**
  * Which kind of path `absPath` is. It resolves the path itself (see resolveReal), so a spelling the
  * caller did not clean up is judged by where it really points. The first matching rule wins.
@@ -120,29 +161,10 @@ export function classify(ctx: Ctx, absPath: string): PathClass {
   const inRepo = rel(root, p);
   if (inRepo === null) return 'outside';
 
-  const appDir = resolveReal(root, ctx.appRoot || '.');
-  const inApp = rel(appDir, p);
-  const views: View[] = [{ base: root, rel: inRepo }];
-  if (inApp !== null && appDir !== root) views.push({ base: appDir, rel: inApp });
-  const plan = ctx.plan;
-
-  if (first(inRepo) === '.seam') return 'seam-records';
-  if (hasFirst(views, '.claude') || INSTRUCTIONS.test(basename(inRepo))) return 'claude-config';
-  if (first(inRepo) === 'plan') return 'plan';
-  if (plan?.legacyRoot != null) {
-    const old = resolveReal(root, plan.legacyRoot);
-    // The new app may live inside the old tree (old app at the repo root, new one in seam-app/).
-    const appInsideOld = appDir !== old && rel(old, appDir) !== null;
-    if (rel(old, p) !== null && !(appInsideOld && inApp !== null)) return 'legacy';
-  }
-  // Every protected place comes before "ignored", so a node_modules folder inside tests/ or contracts/
-  // cannot turn them into something the guard lets through.
-  if (hasFirst(views, TEST_DIRS)) return 'tests';
-  if (hasFirst(views, 'contracts')) return 'contracts';
-  if (hasFirst(views, 'fixtures') || views.some((v) => /^probes\/fixtures(?:\/|$)/.test(v.rel))) return 'fixtures';
-  if (covered(views, plan?.generated ?? [])) return 'generated';
-  // `.git/` holds git's own settings, hooks and exclude list: all of them can change what counts as code.
-  if (CONFIG_NAME.test(basename(inRepo)) || inConfigDir(inRepo) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';
+  const places = placesOf(ctx);
+  const early = protectedClass(ctx, places, p, inRepo);
+  if (early !== null) return early;
+  const inApp = rel(places.appDir, p);
   if (inBuildOutput(inRepo, inApp) || gitIgnores(root, inRepo)) return 'ignored';
   return isCodeFile(inApp ?? inRepo) ? 'app-code' : 'other-in-repo';
 }

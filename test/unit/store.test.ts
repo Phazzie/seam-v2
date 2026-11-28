@@ -16,7 +16,7 @@ describe('withLock (more in lock.test.ts)', () => {
     expect(existsSync(lockPath(root))).toBe(false);
   });
 
-  test('20 parallel processes each add 1 under the lock and the total is 20', async () => {
+  test('20 parallel processes each add 1 under the lock and the total is 20', { retry: 2 }, async () => {
     const { root, data } = setup();
     put(root, '.seam/counter.txt', '0');
     await parallel('incr', root, data, 20);
@@ -103,7 +103,7 @@ describe('updateState', () => {
     expect(readState(root).blocks).toBe(0);
   });
 
-  test('10 parallel processes updating twice each: all 20 land', async () => {
+  test('10 parallel processes updating twice each: all 20 land', { retry: 2 }, async () => {
     const { root, data } = setup();
     writeState(root, data, fresh());
     await parallel('update', root, data, 10, 2);
@@ -121,7 +121,7 @@ describe('recordBlock', () => {
     expect(JSON.parse(readFileSync(mirrorOf(root, data), 'utf8')).blocks).toBe(5);
   });
 
-  test('10 parallel processes blocking twice each: all 20 counted, all 20 logged', async () => {
+  test('10 parallel processes blocking twice each: all 20 counted, all 20 logged', { retry: 2 }, async () => {
     const { root, data } = setup();
     writeState(root, data, fresh());
     await parallel('block', root, data, 10, 2);

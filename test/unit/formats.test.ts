@@ -1,26 +1,18 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { afterAll, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { formatHeader, parseHeader } from '../../src/formats/header.ts';
 import { loadLock, parseLock } from '../../src/formats/lock.ts';
 import { loadPlan, parsePlan } from '../../src/formats/plan.ts';
 import type { Plan } from '../../src/formats/plan.ts';
 import { loadState, parseState } from '../../src/formats/state.ts';
+import { scratchDir } from '../helpers/scratch.ts';
 
 const PRACTICE = resolve(import.meta.dirname, '../fixtures/practice-app');
 const PRACTICE_JSON: unknown = JSON.parse(readFileSync(join(PRACTICE, 'plan/plan.json'), 'utf8'));
 const PRACTICE_PLAN: Plan = parsePlan(PRACTICE_JSON);
 
-const temps: string[] = [];
-const tempDir = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'seam-formats-'));
-  temps.push(dir);
-  return dir;
-};
-afterAll(() => {
-  for (const dir of temps) rmSync(dir, { recursive: true, force: true });
-});
+const tempDir = (): string => scratchDir('seam-formats-');
 const emptyDir = tempDir();
 const dirWith = (rel: string, text: string): string => {
   const dir = tempDir();

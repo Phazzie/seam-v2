@@ -61,7 +61,8 @@ describe('a command from a folder that is not a seam project is judged by the pr
     expect(reasonOf(out)).toMatch(/^one simple command at a time, please/);
     expect(blocksOf(app)).toBe(1);
     expect(heartbeatSeen(app.root)).toBe(true);
-    expect(logOf(app.root)).toMatch(/Blocked: main tried PowerShell "cd .*Remove-Item/);
+    // The log keeps only the first 80 characters of the command, so how much of it shows depends on how long the project's path is.
+    expect(logOf(app.root)).toMatch(/Blocked: main tried PowerShell "cd .*": one simple command at a time/);
   });
 
   test('just the cd: it is not on the list, so it is refused too', async () => {

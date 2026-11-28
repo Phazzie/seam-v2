@@ -19,6 +19,8 @@ export interface HookInput {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_response?: unknown;
+  /** Claude Code's id for one tool call: the same in its PreToolUse and its PostToolUse. */
+  tool_use_id?: string;
   agent_id?: string;
   agent_type?: string;
   cwd: string;
