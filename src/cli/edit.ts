@@ -15,6 +15,7 @@ import type { Ctx } from '../types.ts';
 import { acceptLocked } from './accept.ts';
 import { refusedWithoutKeyboard } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
+import { SetupError } from './home.ts';
 import { relocked } from './relock.ts';
 
 const REFUSAL = 'edits are accepted in your own terminal or the Seam Approve window, not through Claude';
@@ -42,6 +43,10 @@ function readable(load: () => Ctx, io: OwnerIo): Ctx | null {
   try {
     return load();
   } catch (err) {
+    if (err instanceof SetupError) {
+      io.say(err.message); // an incomplete setup is not a damaged record: seam repair would not help
+      return null;
+    }
     if (!(err instanceof Error)) throw err;
     io.say(`${err.message} Nothing was accepted: seam edit needs plan.json, lock.json and state.json to be readable. Fix the file, or run seam repair to put back the guard's saved copy.`);
     return null;

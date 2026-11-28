@@ -29,13 +29,16 @@ export function findRoot(from: string, markers: readonly string[] = [STATE, ENV_
 /** What `.seam/env.json` says, or null if it is not there. */
 export const readEnvFile = (root: string): SeamEnv | null => loadJson(EnvSchema, root, ENV_PATH);
 
-/** Which project the command is run in, and where everything else is. Throws, in plain words, if it is not in a seam project. */
+/** The project cannot be found, or its setup is incomplete: not a damaged record (which `seam repair` can put back), so the window says to run seam init again, not to repair. */
+export class SetupError extends Error {}
+
+/** Which project the command is run in, and where everything else is. Throws a SetupError, in plain words, if it is not in a seam project or its setup is incomplete. */
 export function whereAmI(cwd: string, env: CliEnv, pluginRoot: string): Where {
   const root = findRoot(cwd);
-  if (root === null) throw new Error(`${cwd} is not a seam project (there is no .seam folder here or above it). Run seam init to start one.`);
+  if (root === null) throw new SetupError(`${cwd} is not a seam project (there is no .seam folder here or above it). Run seam init to start one.`);
   const dataDir = env.dataDir ?? readEnvFile(root)?.dataDir;
-  if (dataDir === undefined) throw new Error("This project's setup is incomplete; run seam init again from Claude Code.");
-  if (!existsSync(dataDir)) throw new Error(`The folder that holds this project's guard records (${dataDir}) no longer exists, so seam cannot find them. Run seam init again from Claude Code to set it up afresh.`);
+  if (dataDir === undefined) throw new SetupError("This project's setup is incomplete; run seam init again from Claude Code.");
+  if (!existsSync(dataDir)) throw new SetupError(`The folder that holds this project's guard records (${dataDir}) no longer exists, so seam cannot find them. Run seam init again from Claude Code to set it up afresh.`);
   return { root, dataDir, pluginRoot };
 }
 

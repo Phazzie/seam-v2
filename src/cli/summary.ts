@@ -19,6 +19,7 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
 const EDIT_NOTE = [
   'Make your changes to the protected files first.',
   'When you open the window it lists the files that differ from what the guard has, and approving takes them exactly as they are then.',
+  'If the guard has no record of the protected files yet (its data folder was lost), approving takes a fresh one of every protected file as it is then.',
   "Do it before Claude runs anything else: when Claude's next step ends, the guard puts back any protected file it did not expect to change.",
 ];
 

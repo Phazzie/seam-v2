@@ -89,6 +89,16 @@ function gapSection(ctx: Ctx, now: Date): string[] {
   return lines;
 }
 
+/** The request waiting for the owner, null if there is none, or 'unreadable' if its file cannot be read (the report still has to be written). */
+function waitingRequest(ctx: Ctx): ReturnType<typeof loadPending> | 'unreadable' {
+  try {
+    return loadPending(ctx.root);
+  } catch (err) {
+    if (err instanceof Error) return 'unreadable'; // what it says about the text is in the window
+    throw err;
+  }
+}
+
 /** The whole report, as text. `now` is when it is read (a test hands in its own). */
 export function renderReport(ctx: Ctx, now: Date): string {
   const { state } = ctx;
@@ -96,8 +106,9 @@ export function renderReport(ctx: Ctx, now: Date): string {
   if (state.halted !== null) {
     lines.push(`STOPPED: ${state.halted}`, 'Nothing more will be built until you have looked into it. Open the Seam Approve window on your desktop to look at it and carry on.');
   }
-  const pending = loadPending(ctx.root);
-  if (pending !== null) lines.push(`Waiting for you: your approval to ${KIND_WORDS[pending.kind]}. Open the Seam Approve window on your desktop.`);
+  const request = waitingRequest(ctx);
+  if (request === 'unreadable') lines.push('A request is waiting, but it cannot be read. Open the Seam Approve window on your desktop to clear it; Claude can then ask again.');
+  else if (request !== null) lines.push(`Waiting for you: your approval to ${KIND_WORDS[request.kind]}. Open the Seam Approve window on your desktop.`);
   lines.push('', ...fileLines(ctx), '', ...blockSection(ctx), '', ...gapSection(ctx, now));
   return lines.join('\n');
 }

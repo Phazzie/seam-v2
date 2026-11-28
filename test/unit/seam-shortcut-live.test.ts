@@ -52,7 +52,7 @@ describe.skipIf(!WINDOWS)('seam-approve.cmd on Windows', () => {
     expect(runCmd(script)).toContain('approvals happen in the Seam Approve window on your desktop');
   });
 
-  test('a shortcut for a project whose path has an accent points at the script, accents and all', async () => {
+  test('a shortcut for a project whose path has an accent points at the script, accents and all', () => {
     const base = tempDir();
     const dataDir = join(base, 'données');
     const root = join(base, 'projet é');
@@ -69,7 +69,6 @@ describe.skipIf(!WINDOWS)('seam-approve.cmd on Windows', () => {
     const [target, workDir] = out.stdout.trim().split(/\r?\n/);
     expect(target.toLowerCase()).toBe(made.script.toLowerCase());
     expect(workDir.toLowerCase()).toBe(root.toLowerCase());
-    await Promise.resolve();
   });
 
   test('a PowerShell failure is a plain message, not CLIXML', () => {

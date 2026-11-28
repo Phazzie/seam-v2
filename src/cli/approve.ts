@@ -12,7 +12,7 @@ import { snapshotProtectedLocked } from '../guard/tamper.ts';
 import { buildCtx } from '../guard/context.ts';
 import type { Ctx, Phase } from '../types.ts';
 import { acceptLocked } from './accept.ts';
-import { acceptEditsLocked, changesIn, editFingerprints, listChanges } from './changes.ts';
+import { acceptEditsLocked, changesIn, editFingerprints, hasNoRecord, listChanges, NO_RECORD_YET } from './changes.ts';
 import { moveFor } from './moves.ts';
 import type { Kind } from './moves.ts';
 import { THE_WINDOW, refusedOutsideWindow } from './owner.ts';
@@ -50,9 +50,11 @@ function apply(ctx: Ctx, pending: Pending, next: Phase, shown?: Record<string, s
   // An edit takes the owner's own changes to the protected files into the guard's record (and the lock), or its next check would
   // put them back and halt the run again, blaming the main AI (R77).
   let accepted: string[] = [];
+  let fresh = false;
   if (kind === 'edit') {
     const changes = changesIn(ctx);
     if (shown !== undefined && !sameFingerprints(editFingerprints(ctx, changes), shown)) return refused(CHANGED_WHILE_DECIDING);
+    fresh = hasNoRecord(ctx); // no record (the data folder was lost): accepting takes a fresh one of every protected file (R79)
     accepted = acceptEditsLocked(ctx, changes);
   }
   const clears = kind === 'park' || kind === 'edit';
@@ -62,7 +64,8 @@ function apply(ctx: Ctx, pending: Pending, next: Phase, shown?: Record<string, s
   });
   removeFile(join(ctx.root, PENDING_PATH));
   logLine(ctx.root, `Owner approved ${kind}`);
-  if (accepted.length > 0) logLine(ctx.root, `Owner accepted their own edits to: ${accepted.join(', ')}`);
+  if (fresh) logLine(ctx.root, 'Owner took a fresh record of the protected files');
+  else if (accepted.length > 0) logLine(ctx.root, `Owner accepted their own edits to: ${accepted.join(', ')}`);
   // The files this changed are protected: take them into the guard's record, or its next check would put them back.
   if (kind === 'freeze') snapshotProtectedLocked(buildCtx(ctx.root, ctx.dataDir, ctx.pluginRoot, ctx.now));
   else acceptLocked(ctx, PENDING_PATH);
@@ -102,7 +105,9 @@ export async function approveRequest(io: OwnerIo, ctx: Ctx): Promise<number> {
   const changes = pending.kind === 'edit' ? changesIn(ctx) : [];
   const shown = pending.kind === 'edit' ? editFingerprints(ctx, changes) : undefined;
   let listing = '';
-  if (pending.kind === 'edit') {
+  if (pending.kind === 'edit' && hasNoRecord(ctx)) {
+    listing = `\n\n${NO_RECORD_YET}${changes.length === 0 ? '.' : `, and updates the lock for these locked files that differ from it:\n${listChanges(changes)}`}`;
+  } else if (pending.kind === 'edit') {
     listing = changes.length === 0
       ? '\n\nNo protected file differs from what the guard has, so approving only lets the run carry on.'
       : `\n\nThese protected files differ from what the guard has. Approving takes them exactly as they are now, and updates the lock for them:\n${listChanges(changes)}`;
