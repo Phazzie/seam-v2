@@ -57,7 +57,11 @@ export function mentions(e: ts.Node): string[] {
       down(node.default, true);
       return;
     }
-    if (ts.isTypeQueryNode(node)) return void down(node.exprName, false); // `typeof helper` names a value
+    if (ts.isTypeQueryNode(node)) {
+      down(node.exprName, false); // `typeof helper` names a value
+      node.typeArguments?.forEach((argument) => down(argument, true)); // `typeof factory<Options>`: the arguments are types, and name things too (R82)
+      return;
+    }
     const type = inType || ts.isTypeNode(node);
     ts.forEachChild(node, (child) => {
       if (isKeyOf(node, child)) return; // `a.helper`, `{ helper: 1 }`, `{ helper: number }`: a name of something, not a mention of a local
