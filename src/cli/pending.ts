@@ -6,12 +6,14 @@ import { randomInt } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { loadEnv } from '../formats/env.ts';
 import { PLAN_PATH } from '../formats/plan.ts';
 import type { Plan } from '../formats/plan.ts';
 import { loadJson } from '../formats/read.ts';
 import { ApprovalRecordSchema } from '../formats/state.ts';
 import { locate, wholeFiles } from '../lib/lockfiles.ts';
 import type { Located } from '../lib/lockfiles.ts';
+import { withEffectiveRoots } from '../lib/roots.ts';
 import { hashFile } from '../lib/text.ts';
 import type { Ctx } from '../types.ts';
 import type { Kind } from './moves.ts';
@@ -37,15 +39,17 @@ export function newCode(): string {
 /** The waiting request, or null if there is none. Throws, in plain words, if the file is there and unreadable. */
 export const loadPending = (root: string): Pending | null => loadJson(PendingSchema, root, PENDING_PATH);
 
-/** The planned code files that are not on disk (config files may be absent; the plan says so). */
+/** The planned code files that are not on disk (config files may be absent; the plan says so). They are looked for where the app really is (R81). */
 export function missingPlanned(root: string, plan: Plan): string[] {
-  return plan.seams.flatMap((seam) => seam.files).filter((f) => f.kind !== 'config' && locate(root, plan.appRoot, f.path) === null).map((f) => f.path);
+  const { appRoot, seams } = withEffectiveRoots(plan, loadEnv(root));
+  return seams.flatMap((seam) => seam.files).filter((f) => f.kind !== 'config' && locate(root, appRoot, f.path) === null).map((f) => f.path);
 }
 
 /**
  * What a request is about, as a hash for each file: with a plan, everything the freeze would lock (the plan, the planned
  * files that are there, the contracts, tests and fixtures, the config files); with none yet, the plan file if there is one.
- * Keys are paths from the repo root, in order, so two sets that say the same compare as equal.
+ * Keys are paths from the repo root, in order, so two sets that say the same compare as equal. The files are looked for where the
+ * app really is, as the lock will (R81).
  */
 export function fingerprintsOf(root: string, plan: Plan | null): Record<string, string> {
   const files = new Map<string, string>();
@@ -54,11 +58,12 @@ export function fingerprintsOf(root: string, plan: Plan | null): Record<string, 
     const abs = join(root, PLAN_PATH);
     if (existsSync(abs)) add({ abs, key: PLAN_PATH });
   } else {
-    for (const planned of plan.seams.flatMap((seam) => seam.files)) {
-      const at = locate(root, plan.appRoot, planned.path);
+    const placed = withEffectiveRoots(plan, loadEnv(root));
+    for (const planned of placed.seams.flatMap((seam) => seam.files)) {
+      const at = locate(root, placed.appRoot, planned.path);
       if (at !== null) add(at);
     }
-    wholeFiles(root, plan).forEach(add);
+    wholeFiles(root, placed).forEach(add);
   }
   return Object.fromEntries([...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }

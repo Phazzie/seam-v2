@@ -1,7 +1,7 @@
 // R80 (Codex on PR #25): `seam init --legacy old` (and --app-root) are kept in .seam/env.json, but the guard classified paths by what the
 // PLAN says (plan.legacyRoot, plan.appRoot), and the plan does not exist yet at init. So the old app was not protected until the plan
 // named it, and the first snapshot did not hold it. The guard now takes both from env.json when there is no plan, or when the plan
-// does not set them (the plan wins when it does), from init on.
+// does not set them, from init on. Where both set them they have to agree (R81, roots.ts).
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -84,14 +84,22 @@ describe('the context takes the folders from env.json when the plan does not set
     expect(ctx.legacyRoot).toBe('envold');
   });
 
-  test('the plan wins where it does set them', async () => {
+  test('the plan and env.json agree where both set them', async () => {
+    const app = await makeApp({ phase: 'build', lock: true });
+    const plan = JSON.parse(app.read('plan/plan.json')) as Record<string, unknown>;
+    app.writeRaw('plan/plan.json', JSON.stringify({ ...plan, appRoot: 'sameapp', legacyRoot: 'sameold' }));
+    setEnv(app, { appRoot: 'sameapp', legacyRoot: 'sameold' });
+    const ctx = buildCtx(app.root, app.dataDir, app.pluginRoot, new Date());
+    expect(ctx.appRoot).toBe(join(app.root, 'sameapp'));
+    expect(ctx.plan?.legacyRoot).toBe('sameold');
+  });
+
+  test('where they name different folders it is refused, not guessed (R81)', async () => {
     const app = await makeApp({ phase: 'build', lock: true });
     const plan = JSON.parse(app.read('plan/plan.json')) as Record<string, unknown>;
     app.writeRaw('plan/plan.json', JSON.stringify({ ...plan, appRoot: 'planapp', legacyRoot: 'planold' }));
     setEnv(app, { appRoot: 'envapp', legacyRoot: 'envold' });
-    const ctx = buildCtx(app.root, app.dataDir, app.pluginRoot, new Date());
-    expect(ctx.appRoot).toBe(join(app.root, 'planapp'));
-    expect(ctx.plan?.legacyRoot).toBe('planold');
+    expect(() => buildCtx(app.root, app.dataDir, app.pluginRoot, new Date())).toThrow(/says the app folder is "planapp", but \.seam\/env\.json.*says "envapp"/s);
   });
 
   test('with neither, nothing changes: the repo root, and no old app', async () => {
