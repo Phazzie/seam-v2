@@ -97,4 +97,20 @@ describe('touchHeartbeat and heartbeatGaps', () => {
     expect(() => touchHeartbeat(root, T0)).toThrow(/heartbeat\.json/);
     expect(() => heartbeatGaps(root)).toThrow(/heartbeat\.json/);
   });
+
+  test.each(['{ broken', '', '{"version": 2}', 'null'])('a state.json that cannot be read (%j) does not stop the check-in: the gap is recorded', (text) => {
+    const root = setup('build');
+    touchHeartbeat(root, T0);
+    writeFileSync(join(root, '.seam', 'state.json'), text);
+    expect(() => touchHeartbeat(root, later(2 * HOUR))).not.toThrow();
+    expect(heartbeatGaps(root)).toEqual([{ from: T0.toISOString(), to: later(2 * HOUR).toISOString() }]);
+  });
+
+  test('a short silence is still no gap when state.json cannot be read', () => {
+    const root = setup('build');
+    touchHeartbeat(root, T0);
+    writeFileSync(join(root, '.seam', 'state.json'), '{ broken');
+    touchHeartbeat(root, later(MIN));
+    expect(heartbeatGaps(root)).toEqual([]);
+  });
 });

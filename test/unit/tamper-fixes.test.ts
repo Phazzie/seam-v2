@@ -77,6 +77,16 @@ describe('I-2: a plan, lock or state file overwritten with text the guard cannot
     expect(logOf(app.root)).not.toMatch(/secret-ish/);
   });
 
+  test('after a quiet spell of over ten minutes in the build phase it is still put back (the check-in comes first and must not trip on it)', async () => {
+    const app = await makeApp({ phase: 'build', lock: true });
+    app.writeRaw('.seam/heartbeat.json', JSON.stringify({ lastSeen: new Date(Date.now() - 30 * 60 * 1000).toISOString() }));
+    app.writeRaw('.seam/state.json', '{ broken');
+    const out = await call(app, post('Bash', { command: 'echo hi' }));
+    expect(printed(out)).toEqual({ decision: 'block', reason: '.seam/state.json was changed outside the rules and has been put back' });
+    expect(stateOf(app).halted).toBe('the main AI changed a protected file: .seam/state.json');
+    expect(JSON.parse(app.read('.seam/heartbeat.json')).gaps).toHaveLength(1);
+  });
+
   test('a builder that does it gets a strike, not a halt', async () => {
     const app = await makeApp({ phase: 'build', lock: true, turn });
     app.writeRaw(PLAN, 'not json');
