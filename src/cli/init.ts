@@ -3,7 +3,7 @@
 // data folder (so deleting `.seam/` cannot switch the guard off), takes the first snapshot of the protected files, and
 // logs it. The project is listed only once its state exists: a listed folder with no state is "missing", and blocks every call.
 import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, win32 } from 'node:path';
 import { loadPlan } from '../formats/plan.ts';
 import type { SeamState } from '../formats/state.ts';
 import { snapshotProtected } from '../guard/tamper.ts';
@@ -14,7 +14,9 @@ import { effectiveAppRoot, effectiveLegacyRoot } from '../lib/roots.ts';
 import { readState, writeState } from '../lib/store.ts';
 import type { Ctx } from '../types.ts';
 import { ENV_PATH, findRoot, readEnvFile } from './home.ts';
-import { desktopFolder, installShortcut, SHORTCUT_NAME } from './shortcut.ts';
+import { desktopFolder, installShortcut } from './shortcut.ts';
+import { findLink } from './shortcutlink.ts';
+import { shortcutNameFor } from './shortcutnames.ts';
 import type { SeamEnv } from './home.ts';
 
 export interface InitOptions {
@@ -47,18 +49,19 @@ function setupIncomplete(root: string): boolean {
 }
 
 /**
- * After a lost data folder the desktop shortcut's target, seam-approve.cmd, is lost with it, and the window cannot open. If the "Seam Approve"
- * shortcut is on the desktop, write the script again and point the shortcut at it (the data folder may be elsewhere now); the owner is told
- * so. If it is not, the owner is told to run seam install-shortcut first. Never fails the setup: what went wrong is said instead.
+ * After a lost data folder the desktop shortcut's target, this project's seam-approve-<rootKey>.cmd, is lost with it, and the window cannot open.
+ * If this project's shortcut ("Seam Approve - <folder name>", or the old single-name one if it is this project's, R81) is on the desktop, write the
+ * script again and point the shortcut at it (the data folder may be elsewhere now); the owner is told so. If it is not, the owner is told to
+ * run seam install-shortcut first. Never fails the setup: what went wrong is said instead.
  */
 function shortcutNote(root: string, o: InitOptions): string {
   const record = 'to take a fresh record of the protected files if the guard says its record is missing';
-  const install = `First run seam install-shortcut (from Claude Code) to put the "${SHORTCUT_NAME}" shortcut on the desktop; then open the window and choose "Accept my own edits" ${record}.`;
+  const install = `First run seam install-shortcut (from Claude Code) to put the "${shortcutNameFor(root)}" shortcut on the desktop; then open the window and choose "Accept my own edits" ${record}.`;
   try {
     const desktop = desktopFolder(o.desktopDir ?? null, o.platform);
-    if (desktop === null || !existsSync(join(desktop, `${SHORTCUT_NAME}.lnk`))) return install;
-    installShortcut({ root, dataDir: o.dataDir, pluginRoot: o.pluginRoot, desktopDir: o.desktopDir ?? null, platform: o.platform });
-    return `The "${SHORTCUT_NAME}" shortcut on your desktop works again: open it, and choose "Accept my own edits" ${record}.`;
+    if (desktop === null || findLink(root, desktop) === null) return install;
+    const made = installShortcut({ root, dataDir: o.dataDir, pluginRoot: o.pluginRoot, desktopDir: o.desktopDir ?? null, platform: o.platform });
+    return `The "${win32.basename(made.link, '.lnk')}" shortcut on your desktop works again: open it, and choose "Accept my own edits" ${record}.`;
   } catch (err) {
     return `${install} (The desktop shortcut could not be checked: ${(err as Error).message})`;
   }
@@ -105,5 +108,5 @@ export function initProject(o: InitOptions): string {
   snapshotProtected(ctx);
   const notes = [o.appRoot === undefined ? '' : `app folder ${o.appRoot}`, o.legacy === undefined ? '' : `old app ${o.legacy}`].filter((note) => note !== '');
   logLine(root, `Seam project started${notes.length === 0 ? '' : ` (${notes.join(', ')})`}`, now);
-  return `Seam project started in ${root}. Next: seam install-shortcut puts "Seam Approve" on your desktop, for approving the big steps.`;
+  return `Seam project started in ${root}. Next: seam install-shortcut puts a "${shortcutNameFor(root)}" shortcut on your desktop, for approving the big steps.`;
 }

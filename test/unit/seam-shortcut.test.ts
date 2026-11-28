@@ -1,13 +1,14 @@
-// The "Seam Approve" desktop shortcut (Task 13): `seam install-shortcut` writes seam-approve.cmd into the data folder and a
-// shortcut to it on the desktop, and `seam approve` accepts only a window that was opened from that file (the parent
+// The "Seam Approve" desktop shortcut (Task 13): `seam install-shortcut` writes the project's launcher (seam-approve-<rootKey>.cmd, R81) into the
+// data folder and a shortcut to it on the desktop ("Seam Approve - <folder name>"), and `seam approve` accepts only a window that was opened from that file (the parent
 // chain of the process holds a cmd.exe whose command line names it). Nothing here touches the owner's real desktop: the
 // desktop folder is handed in. The checks that need Windows are skipped elsewhere.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { approveScript, installShortcut, launchedByShortcut, parseChain, shortcutInChain } from '../../src/cli/shortcut.ts';
+import { scriptPathFor, shortcutNameFor } from '../../src/cli/shortcutnames.ts';
 import { makeApp } from '../helpers/app.ts';
 import { folderOf } from '../helpers/cli.ts';
 import { put, tempDir } from '../helpers/project.ts';
@@ -97,13 +98,13 @@ describe.skipIf(!WINDOWS)('on Windows, for real', () => {
     expect(p.run(false)).toContain('answer=false');
   });
 
-  test('install-shortcut writes seam-approve.cmd into the data folder and a "Seam Approve" shortcut to it in the desktop folder it is given', async () => {
+  test('install-shortcut writes the project\'s launcher into the data folder and a "Seam Approve - <folder name>" shortcut to it in the desktop folder it is given', async () => {
     const app = await makeApp({ phase: 'setup' });
     const desktop = tempDir();
     const made = installShortcut({ root: app.root, dataDir: app.dataDir, pluginRoot: app.pluginRoot, desktopDir: desktop });
-    expect(made.script).toBe(join(app.dataDir, 'seam-approve.cmd'));
+    expect(made.script).toBe(scriptPathFor(app.dataDir, app.root));
     expect(readFileSync(made.script, 'utf8')).toBe(approveScript(app.root, app.pluginRoot));
-    expect(made.link).toBe(join(desktop, 'Seam Approve.lnk'));
+    expect(made.link).toBe(join(desktop, `Seam Approve - ${win32.basename(app.root)}.lnk`));
     expect(existsSync(made.link)).toBe(true);
     const target = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object -ComObject WScript.Shell).CreateShortcut('${made.link}').TargetPath`], { encoding: 'utf8', windowsHide: true });
     expect(target.stdout.trim().toLowerCase()).toBe(made.script.toLowerCase());
@@ -114,18 +115,9 @@ describe.skipIf(!WINDOWS)('on Windows, for real', () => {
     const desktop = tempDir();
     const r = await folderOf(app).cli(['install-shortcut'], { SEAM_DESKTOP_DIR: desktop });
     expect(r.exitCode, r.stdout + r.stderr).toBe(0);
-    expect(existsSync(join(desktop, 'Seam Approve.lnk'))).toBe(true);
-    expect(existsSync(join(app.dataDir, 'seam-approve.cmd'))).toBe(true);
-    expect(r.stdout).toMatch(/Seam Approve/);
+    expect(existsSync(join(desktop, `${shortcutNameFor(app.root)}.lnk`))).toBe(true);
+    expect(existsSync(scriptPathFor(app.dataDir, app.root))).toBe(true);
+    expect(r.stdout).toContain(`"${shortcutNameFor(app.root)}" shortcut is on your desktop`);
     expect(r.stdout).toMatch(/desktop/);
-  });
-
-  test('running it again replaces the shortcut (and points it at the project it was run from)', async () => {
-    const app = await makeApp({ phase: 'setup' });
-    const other = await makeApp({ phase: 'setup' });
-    const desktop = tempDir();
-    installShortcut({ root: app.root, dataDir: app.dataDir, pluginRoot: app.pluginRoot, desktopDir: desktop });
-    installShortcut({ root: other.root, dataDir: app.dataDir, pluginRoot: app.pluginRoot, desktopDir: desktop });
-    expect(readFileSync(join(app.dataDir, 'seam-approve.cmd'), 'utf8')).toContain(other.root);
   });
 });

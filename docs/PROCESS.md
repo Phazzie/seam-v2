@@ -62,7 +62,8 @@ Either way, the old app is never touched. It stays runnable so the plugin can re
 really behaves.
 
 Setup also:
-- installs a **"Seam Approve" shortcut** on your desktop;
+- installs a **"Seam Approve - <project folder name>" shortcut** on your desktop, one for each
+  project (so projects that share the plugin never take over each other's shortcut);
 - lets the plugin's own commands run without Claude Code asking each time, so overnight runs
   don't stall;
 - shows you any of the repo's existing instructions (`CLAUDE.md`, `AGENTS.md`, hooks) that
@@ -192,7 +193,8 @@ never deploys.
 
 ## Your approvals
 
-You approve in the **Seam Approve** window (the desktop shortcut), never in the chat. Chat
+You approve in the **Seam Approve** window (your project's "Seam Approve - ..." desktop
+shortcut), never in the chat. Chat
 messages can come from automated sources, so a typed "yes" there can't prove it was you.
 The window shows a one-screen summary and a short code, and you type the code back. The AI is
 blocked from opening this window.
