@@ -1,6 +1,7 @@
 // Reading what Claude Code sent on stdin, and finding the paths a tool call names. Kept small on purpose:
 // the hook's main thread uses it, and it should not have to load the path and state code just to read a request.
 import type { HookInput } from '../types.ts';
+import { commandTargets } from './commandtext.ts';
 import { COULDNT_READ, describeError, refusal, SILENT } from './output.ts';
 import type { HookEvent, HookOutput } from './output.ts';
 
@@ -68,8 +69,21 @@ export const PATH_FIELDS = ['file_path', 'notebook_path', 'path'] as const;
 const fieldOf = (input: HookInput, field: (typeof PATH_FIELDS)[number]): unknown => input.tool_input?.[field] ?? undefined;
 
 /** The values of the path fields that are text and not empty, as written. */
-export function targetsOf(input: HookInput): string[] {
+export function fieldTargetsOf(input: HookInput): string[] {
   return PATH_FIELDS.map((field) => fieldOf(input, field)).filter((v): v is string => typeof v === 'string' && v !== '');
+}
+
+const COMMAND_TOOLS = new Set(['Bash', 'PowerShell']);
+
+/**
+ * Everything the call names: the path fields, and for a shell command the paths and folders it mentions
+ * (`commandTargets`, with MSYS, Cygwin and WSL forms made drive paths too, R20). A command run from a folder
+ * that is not a seam project, which changes into one or names a path in one, is then that project's (R41).
+ */
+export function targetsOf(input: HookInput): string[] {
+  const command = input.tool_input?.command;
+  const mentioned = COMMAND_TOOLS.has(input.tool_name ?? '') && typeof command === 'string' ? commandTargets(command) : [];
+  return [...fieldTargetsOf(input), ...mentioned];
 }
 
 /** Is a path field there but not text (a number, a list)? The tool call is then not one the guard can read. */

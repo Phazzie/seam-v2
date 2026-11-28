@@ -11,8 +11,12 @@ const WIN = process.platform === 'win32';
 describe('classify', () => {
   const p = project({ config: ['package.json', 'tsconfig.json', 'vitest.config.ts', 'settings/extra.cfg'], generated: ['src/routeTree.gen.ts', 'src/gen'] });
 
-  test.each(['src/pricing/total.ts', './src/../src/pricing/total.ts', 'src/pricing/total.ts.', 'src/pricing/total.ts::$DATA'])(
+  test.each(['src/pricing/total.ts', './src/../src/pricing/total.ts'])(
     '%s classifies like src/pricing/total.ts', (rawPath) => expect(classify(p.ctx, resolveReal(p.root, rawPath))).toBe('app-code'),
+  );
+  // Windows drops a trailing dot and a `:stream`; elsewhere they are part of another name, which is not code.
+  test.each(['src/pricing/total.ts.', 'src/pricing/total.ts::$DATA'])(
+    '%s is total.ts on Windows only', (rawPath) => expect(classify(p.ctx, resolveReal(p.root, rawPath))).toBe(WIN ? 'app-code' : 'other-in-repo'),
   );
   test.runIf(WIN)('SRC\\Pricing\\Total.ts classifies like src/pricing/total.ts', () => {
     expect(classify(p.ctx, resolveReal(p.root, 'SRC\\Pricing\\Total.ts'))).toBe('app-code');
@@ -133,9 +137,10 @@ describe('classify', () => {
 });
 
 describe('isCodeFile', () => {
-  test.each(['a.ts', 'a.tsx', 'a.js', 'a.mjs', 'a.cjs', 'a.jsx', 'src/a.d.ts', 'SRC\\A.TS', './src/a.ts', 'src/a.ts.', 'db/x.sql', 'package.json', 'src/data.json', 'src/probes/x.json'])(
+  test.each(['a.ts', 'a.tsx', 'a.js', 'a.mjs', 'a.cjs', 'a.jsx', 'src/a.d.ts', 'SRC\\A.TS', './src/a.ts', 'db/x.sql', 'package.json', 'src/data.json', 'src/probes/x.json'])(
     '%s is code', (p) => expect(isCodeFile(p)).toBe(true),
   );
+  test('a trailing dot is dropped by Windows only, so only there is src/a.ts. the file src/a.ts', () => expect(isCodeFile('src/a.ts.')).toBe(WIN));
   test.each(['probes/x.json', 'probes/a/b.sql', './probes/x.json', 'PROBES\\x.json', '.seam/state.json', 'README.md', 'a.css', 'a.png', 'a.tsx.map', 'src/Makefile', 'src/noext'])(
     '%s is not code', (p) => expect(isCodeFile(p)).toBe(false),
   );

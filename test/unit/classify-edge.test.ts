@@ -22,20 +22,20 @@ describe('a node_modules folder cannot turn a protected place into "ignored"', (
   test.each(cases)('%s is %s', (relPath, expected) => expect(p.at(relPath)).toBe(expected));
 });
 
-describe('the instruction files at the top of the repo are Claude config (R18)', () => {
+describe('the instruction files are Claude config in any folder (R18, R54)', () => {
   const p = project();
-  test.each(['CLAUDE.md', 'AGENTS.md', 'AGENTS.project.md', 'claude.md', 'Agents.Project.MD', 'CLAUDE.md.', './CLAUDE.md', 'src/../AGENTS.md'])(
+  test.each(['CLAUDE.md', 'AGENTS.md', 'AGENTS.project.md', 'claude.md', 'Agents.Project.MD', 'CLAUDE.md.', './CLAUDE.md', 'src/../AGENTS.md', 'CLAUDE.local.md', 'AGENTS.local.md'])(
     '%s is claude-config', (relPath) => expect(p.at(relPath)).toBe('claude-config'),
   );
   test.runIf(WIN)('CLAUDE.md::$DATA is claude-config', () => expect(p.at('CLAUDE.md::$DATA')).toBe('claude-config'));
-  test.each(['README.md', 'CLAUDE.md.bak', 'MYCLAUDE.md', 'AGENTS.local.md', 'docs/CLAUDE.md', 'src/AGENTS.md', 'CLAUDE.mdx'])(
+  test.each(['README.md', 'CLAUDE.md.bak', 'MYCLAUDE.md', 'CLAUDE.mdx', 'CLAUDE.other.md', 'AGENTS.local.md.bak', 'MYAGENTS.md'])(
     '%s is not', (relPath) => expect(p.at(relPath)).not.toBe('claude-config'),
   );
   test('the app folder counts as well when it is not the repo root', () => {
     const q = project({ appRoot: 'seam-app' });
     expect(q.at('seam-app/CLAUDE.md')).toBe('claude-config');
     expect(q.at('CLAUDE.md')).toBe('claude-config');
-    expect(q.at('seam-app/src/CLAUDE.md')).not.toBe('claude-config');
+    expect(q.at('seam-app/src/CLAUDE.md')).toBe('claude-config');
   });
   test('they stay protected when the old app owns the repo root', () => {
     expect(project({ legacyRoot: '.', appRoot: 'seam-app' }).at('CLAUDE.md')).toBe('claude-config');

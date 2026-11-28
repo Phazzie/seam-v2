@@ -131,9 +131,17 @@ describe('resolveReal and rel', () => {
     expect(plain === plain.toLowerCase()).toBe(WIN);
     expect(plain.endsWith('/src/pricing/total.ts')).toBe(true);
   });
-  test.each(['./src/../src/pricing/total.ts', 'src/pricing/total.ts.', 'src/pricing/total.ts ', 'src/./pricing//total.ts', 'src./pricing/total.ts'])(
+  test.each(['./src/../src/pricing/total.ts', 'src/./pricing//total.ts'])(
     '%s resolves like src/pricing/total.ts', (p) => expect(resolveReal(root, p)).toBe(plain),
   );
+  // Only Windows drops a trailing dot or space; elsewhere `total.ts.` is another name (see realpath-posix.test.ts).
+  test.runIf(WIN)('a trailing dot or space resolves like src/pricing/total.ts', () => {
+    for (const p of ['src/pricing/total.ts.', 'src/pricing/total.ts ', 'src./pricing/total.ts']) expect(resolveReal(root, p)).toBe(plain);
+  });
+  test.runIf(!WIN)('a trailing dot or space is part of the name', () => {
+    expect(resolveReal(root, 'src/pricing/total.ts.')).toBe(`${plain}.`);
+    expect(resolveReal(root, 'src/pricing/total.ts ')).toBe(`${plain} `);
+  });
   test.runIf(WIN)('Windows spellings resolve like src/pricing/total.ts', () => {
     for (const p of ['SRC\\Pricing\\Total.ts', 'src\\pricing\\total.ts', 'Src/PRICING/total.TS', 'src/pricing/total.ts::$DATA', 'src/pricing/total.ts:stream:$DATA']) {
       expect(resolveReal(root, p)).toBe(plain);
@@ -160,6 +168,12 @@ describe('resolveReal and rel', () => {
     rmSync(join(base, 'gone'), { recursive: true });
     expect(resolveReal(base, 'dangling/later.ts')).toBe(resolveReal(base, 'gone/later.ts'));
     expect(resolveReal(base, 'dangling')).toBe(resolveReal(base, 'gone'));
+  });
+  test('link/.. is read as this system reads it: Windows collapses it as text, Linux and macOS follow the link first', () => {
+    const base = tempDir();
+    put(base, 'real/inner/file.ts');
+    symlinkSync(join(base, 'real', 'inner'), join(base, 'link'), WIN ? 'junction' : 'dir');
+    expect(resolveReal(base, 'link/../x.ts')).toBe(resolveReal(base, WIN ? 'x.ts' : 'real/x.ts'));
   });
   test('a path with a NUL byte is an error', () => {
     expect(() => resolveReal(root, 'src/a\0b.ts')).toThrow(/Could not work out/);

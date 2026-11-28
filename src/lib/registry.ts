@@ -6,11 +6,14 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { loadJson } from '../formats/read.ts';
 import { STATE_PATH } from '../formats/state.ts';
+import { withLockFile } from './lock.ts';
 import { staysOnNetwork } from './pathcheck.ts';
 import { resolveReal } from './realpath.ts';
 
 export const REGISTRY_FILE = 'projects.json';
 export const WARNINGS_FILE = 'registry-warnings.log';
+/** The lock file in the data folder that serializes updates of the list. */
+export const REGISTRY_LOCK = 'projects.lock';
 const RegistrySchema = z.strictObject({ projects: z.array(z.string()) });
 
 export type ProjectLookup = { kind: 'none' } | { kind: 'seam'; root: string } | { kind: 'missing'; root: string };
@@ -73,21 +76,25 @@ export function findProject(cwd: string, dataDir: string): ProjectLookup {
 }
 
 /**
- * Add a project to the list (once). The file is replaced whole, so a reader never sees half of it.
+ * Add a project to the list (once). The file is replaced whole, so a reader never sees half of it. The
+ * read, the check and the replace happen inside one lock in the data folder (`projects.lock`), so two
+ * processes registering different projects at once both end up listed instead of one overwriting the other.
  * Throws if the list exists but cannot be read, rather than writing over it.
  */
 export function registerProject(root: string, dataDir: string): void {
   const entry = resolveReal(root, '.');
-  const projects = written(dataDir).map((root) => spelled(root) ?? root); // a network entry stays as written
-  if (projects.includes(entry)) return;
   const file = join(dataDir, REGISTRY_FILE);
-  const temp = `${file}.${process.pid}.tmp`;
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(temp, `${JSON.stringify({ projects: [...projects, entry] }, null, 2)}\n`);
-  try {
-    renameSync(temp, file);
-  } catch (err) {
-    rmSync(temp, { force: true });
-    throw err;
-  }
+  withLockFile(join(dataDir, REGISTRY_LOCK), () => {
+    const projects = written(dataDir).map((listed) => spelled(listed) ?? listed); // a network entry stays as written
+    if (projects.includes(entry)) return;
+    const temp = `${file}.${process.pid}.tmp`;
+    writeFileSync(temp, `${JSON.stringify({ projects: [...projects, entry] }, null, 2)}\n`);
+    try {
+      renameSync(temp, file);
+    } catch (err) {
+      rmSync(temp, { force: true });
+      throw err;
+    }
+  });
 }

@@ -3,7 +3,8 @@
 //   1. a protected place is refused for every role (a checker's verdict file is the one exception);
 //   2. a role that writes nothing (describer, surveyor, readonly, design, and a checker apart from its
 //      verdict) is refused everywhere, outside the repo too (R48);
-//   3. outside the repo, and not protected, only the main AI may write (R48);
+//   3. outside the repo, and not protected, only the main AI may write (R48), and only in the temp folder (R57):
+//      git, npm and shell settings live out there, and they make programs run;
 //   4. node_modules and build output are refused (R19);
 //   5. a code file that is not in the plan is refused, whoever writes it (cheat 6);
 //   6. then the main AI's rules (planning files, contracts, tests) or the builder's (turn, lock, code rules).
@@ -12,6 +13,7 @@
 // (R47). Everything decided by the kind of path, the phase or the turn never loads it.
 import { readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
+import { tempFolder } from '../config/temp.ts';
 import { errorCode } from '../lib/atomic.ts';
 import { classify, inBuildOutput, rel, resolveReal } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
@@ -128,6 +130,9 @@ async function decideBuilder(input: HookInput, ctx: Ctx, t: Target): Promise<Dec
   return lockProblems.length + ruleProblems.length === 0 ? ALLOW : deny(why.refusal(t.name, lockProblems, ruleProblems));
 }
 
+/** Outside the project the main AI writes in the temp folder and nowhere else (R57). */
+const decideOutside = (t: Target): Decision => (rel(resolveReal(tempFolder(), '.'), t.real) === null ? deny(why.OUTSIDE_TEMP_ONLY) : ALLOW);
+
 async function decideFile(input: HookInput, ctx: Ctx, t: Target): Promise<Decision> {
   const role = roleOf(input);
   const protectedPlace = why.PROTECTED[t.cls];
@@ -135,7 +140,7 @@ async function decideFile(input: HookInput, ctx: Ctx, t: Target): Promise<Decisi
   const writesNothing = why.READS_ONLY[role];
   if (writesNothing !== undefined) return deny(writesNothing);
   // Only main and builder are left.
-  if (t.cls === 'outside') return role === 'main' ? ALLOW : deny(why.OUTSIDE_MAIN_ONLY);
+  if (t.cls === 'outside') return role === 'main' ? decideOutside(t) : deny(why.OUTSIDE_MAIN_ONLY);
   if (t.cls === 'ignored' && t.inRepo !== null && inBuildOutput(t.inRepo, t.inApp)) return deny(why.IN_BUILD_OUTPUT);
   if (t.cls === 'app-code' && t.planned === null) return deny(why.notInPlan(t.name));
   return role === 'main' ? decideMain(input, ctx, t) : decideBuilder(input, ctx, t);
