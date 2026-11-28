@@ -6,8 +6,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { STATE_PATH } from '../formats/state.ts';
 import { atomicWrite, errorCode } from '../lib/atomic.ts';
-import type { Ctx } from '../types.ts';
 import { recordFolder } from './tamperrecord.ts';
+import type { Home } from './tamperrecord.ts';
 
 const textOrNull = (file: string): string | null => {
   try {
@@ -18,22 +18,23 @@ const textOrNull = (file: string): string | null => {
   }
 };
 
-const mirrorFile = (ctx: Ctx): string => join(recordFolder(ctx), 'state.json');
+const mirrorFile = (ctx: Home): string => join(recordFolder(ctx), 'state.json');
 
 /** Is state.json not the same as its copy? False if there is no copy to compare it with. */
-export function stateDiffers(ctx: Ctx): boolean {
+export function stateDiffers(ctx: Home): boolean {
   const copy = textOrNull(mirrorFile(ctx));
   return copy !== null && textOrNull(join(ctx.root, STATE_PATH)) !== copy;
 }
 
-/** Put state.json back from its copy. Call it under the lock, after `stateDiffers` was still true there. */
-export function restoreState(ctx: Ctx): void {
+/** Put state.json back from its copy; false if there is no copy. Call it under the lock, after `stateDiffers` was still true there. */
+export function restoreState(ctx: Home): boolean {
   const copy = textOrNull(mirrorFile(ctx));
   if (copy !== null) atomicWrite(join(ctx.root, STATE_PATH), copy);
+  return copy !== null;
 }
 
 /** Make the copy match state.json as it is now (for a snapshot, which takes the state as it stands). */
-export function copyState(ctx: Ctx): void {
+export function copyState(ctx: Home): void {
   const text = textOrNull(join(ctx.root, STATE_PATH));
   if (text !== null) atomicWrite(mirrorFile(ctx), text);
 }

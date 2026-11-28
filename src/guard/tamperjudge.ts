@@ -40,7 +40,8 @@ function undo(c: Case, key: string, abs: string, entry: Entry, verb: string, why
 function judgeKnown(c: Case, key: string, abs: string, entry: Entry): Verdict | null {
   const now = look(abs);
   if (now !== null) {
-    if (hashOf(abs) === entry.hash) {
+    // A file of another size is changed, and is not read at all: a huge replacement is put back, never hashed whole.
+    if (now.size === entry.size && hashOf(abs) === entry.hash) {
       c.rec.files[key] = { ...entry, size: now.size, mtimeMs: now.mtimeMs }; // only touched
       return null;
     }
@@ -72,10 +73,21 @@ function judgeNew(c: Case, key: string, abs: string): Verdict | null {
   return { key, problem: `${key} is a new file that has no place there${moved.big ? ' (over 2 MB)' : ''} and has been moved aside` };
 }
 
+/**
+ * The one protected file that Claude Code itself writes: when the owner answers "don't ask again" to a permission
+ * prompt it saves the answer to `.claude/settings.local.json`. That is never put back or moved aside, only taken
+ * into the record as it is, without a word. (The write decision still refuses the AI's own writes to it.)
+ */
+const OWNER_SETTINGS = /^\.claude\/settings\.local\.json$/i;
+
 /** Settle one finding against the record as it is now. Null means there is nothing to report. */
 export function judge(c: Case, found: Finding): Verdict | null {
   const { key } = found;
   const abs = absOf(c.ctx, key);
+  if (OWNER_SETTINGS.test(key)) {
+    takeIn(c.ctx, c.rec, key);
+    return null;
+  }
   if (found.kind === 'newOther') {
     if (look(abs) !== null && !c.rec.code.includes(key)) c.rec.code.push(key);
     return null;

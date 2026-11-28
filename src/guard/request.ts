@@ -16,7 +16,7 @@ export type Parsed = { ok: true; input: HookInput; event: HookEvent | null } | {
  * anything else is denied, so an event that cannot be told is taken as PreToolUse.
  */
 export function sniffEvent(raw: string): HookEvent {
-  return /"hook_event_name"\s*:\s*"PostToolUse"/.test(raw) ? 'PostToolUse' : 'PreToolUse';
+  return /"hook_event_name"\s*:\s*"PostToolUse(?:Failure)?"/.test(raw) ? 'PostToolUse' : 'PreToolUse';
 }
 
 /**
@@ -36,11 +36,14 @@ export function parseInput(raw: string): Parsed {
   }
   const name = value.hook_event_name;
   const input = value as unknown as HookInput;
-  if (name !== 'PreToolUse' && name !== 'PostToolUse') return { ok: true, input, event: null };
+  // A PostToolUseFailure (the tool ran and failed) has the shape of a PostToolUse plus the error, and the same block
+  // for an answer (hooks docs): it is handled as a PostToolUse, since a tool that failed half way may have changed files.
+  const event: HookEvent | null = name === 'PreToolUse' ? 'PreToolUse' : name === 'PostToolUse' || name === 'PostToolUseFailure' ? 'PostToolUse' : null;
+  if (event === null) return { ok: true, input, event: null };
   const shapeOk =
     typeof value.tool_name === 'string' && typeof value.cwd === 'string' && (value.tool_input === undefined || isRecord(value.tool_input));
-  if (!shapeOk) return { ok: false, event: name, why: 'tool_name or cwd is not text, or tool_input is not an object' };
-  return { ok: true, input, event: name };
+  if (!shapeOk) return { ok: false, event, why: 'tool_name or cwd is not text, or tool_input is not an object' };
+  return { ok: true, input, event };
 }
 
 /** Either the answer already (a request that cannot be read, or one the guard stays out of), or what to decide. */

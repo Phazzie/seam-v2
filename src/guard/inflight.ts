@@ -57,16 +57,19 @@ export function started(ctx: Ctx, input: HookInput, paths: string[]): void {
   });
 }
 
+export interface Finished { paths: string[]; others: number; otherPaths: string[] }
+
 /**
  * A call is over. Returns the files it was allowed to change (none if it was never noted: the guard did not
- * allow it, or its before-hook crashed), and how many other calls are still under way.
+ * allow it, or its before-hook crashed), how many other calls are still under way, and the files those were allowed to
+ * change: a write of theirs may already be on disk, and it is theirs to accept when their own after-hook comes.
  */
-export function finished(ctx: Ctx, input: HookInput): { paths: string[]; others: number } {
+export function finished(ctx: Ctx, input: HookInput): Finished {
   const id = callId(input);
-  const done = (calls: Calls): { paths: string[]; others: number } => ({
-    paths: calls.find((call) => call.id === id)?.paths ?? [],
-    others: calls.filter((call) => call.id !== id).length,
-  });
+  const done = (calls: Calls): Finished => {
+    const others = calls.filter((call) => call.id !== id);
+    return { paths: calls.find((call) => call.id === id)?.paths ?? [], others: others.length, otherPaths: others.flatMap((call) => call.paths) };
+  };
   if (!NOTED_TOOLS.has(input.tool_name ?? '')) return done(readCalls(ctx));
   return withLock(ctx.root, () => {
     const calls = readCalls(ctx);

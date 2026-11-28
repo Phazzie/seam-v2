@@ -20,7 +20,10 @@ function who(input: HookInput): string {
 
 /** Record what the changes at `paths` cost. Changes `rec.unattributed`; the caller saves the record. */
 export function consequences(ctx: Ctx, input: HookInput, rec: TamperRecord, paths: string[], others: number): void {
-  if (paths.length === 0) return;
+  if (paths.length === 0) {
+    rec.unattributed = 0; // a check with nothing wrong in it ends the run of unattributed ones
+    return;
+  }
   const state = readState(ctx.root);
   const first = paths[0];
   let { halted } = state;

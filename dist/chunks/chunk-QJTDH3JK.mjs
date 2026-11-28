@@ -1,0 +1,8 @@
+import { createRequire as __seamCreateRequire } from 'node:module';
+import { fileURLToPath as __seamFileURLToPath } from 'node:url';
+import { dirname as __seamDirname } from 'node:path';
+const require = __seamCreateRequire(import.meta.url);
+const __filename = __seamFileURLToPath(import.meta.url);
+const __dirname = __seamDirname(__filename);
+import{a as c}from"./chunk-5PLPSMQV.mjs";import{a as n,h,j as m,k as l}from"./chunk-U7MYMQUW.mjs";import{createHash as y}from"node:crypto";import{readFileSync as C}from"node:fs";import{join as p}from"node:path";var u=".seam/inflight",_=600*1e3,S=new Set(["Edit","Write","MultiEdit","NotebookEdit","Bash","PowerShell"]),w=n.array(n.strictObject({id:n.string(),at:n.number(),paths:n.array(n.string())}));function d(t){return typeof t.tool_use_id=="string"&&t.tool_use_id!==""?t.tool_use_id:y("sha256").update(JSON.stringify([t.agent_id??"",t.tool_name,t.tool_input])).digest("hex").slice(0,16)}function f(t){let o;try{o=C(p(t.root,u),"utf8")}catch(r){if(h(r)==="ENOENT")return[];throw r}let e;try{e=JSON.parse(o)}catch(r){return c(t.root,`The note of calls under way could not be read, so it was started again (${r.message}).`),[]}let s=w.safeParse(e),i=t.now.getTime()-_;return s.success?s.data.filter(r=>r.at>i):[]}var g=(t,o)=>m(p(t.root,u),`${JSON.stringify(o)}
+`);function b(t,o,e){l(t.root,()=>{g(t,[...f(t).filter(s=>s.id!==d(o)),{id:d(o),at:t.now.getTime(),paths:e}])})}function F(t,o){let e=d(o),s=i=>{let r=i.filter(a=>a.id!==e);return{paths:i.find(a=>a.id===e)?.paths??[],others:r.length,otherPaths:r.flatMap(a=>a.paths)}};return S.has(o.tool_name??"")?l(t.root,()=>{let i=f(t);return g(t,i.filter(r=>r.id!==e)),s(i)}):s(f(t))}export{u as a,d as b,b as c,F as d};
