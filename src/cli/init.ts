@@ -6,14 +6,15 @@ import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve, win32 } from 'node:path';
 import { loadPlan } from '../formats/plan.ts';
 import type { SeamState } from '../formats/state.ts';
+import { buildCtx } from '../guard/context.ts';
 import { snapshotProtected } from '../guard/tamper.ts';
 import { atomicWrite } from '../lib/atomic.ts';
 import { logLine } from '../lib/log.ts';
 import { registerProject } from '../lib/paths.ts';
-import { effectiveAppRoot, effectiveLegacyRoot } from '../lib/roots.ts';
+import { withEffectiveRoots } from '../lib/roots.ts';
 import { readState, writeState } from '../lib/store.ts';
-import type { Ctx } from '../types.ts';
 import { ENV_PATH, findRoot, readEnvFile } from './home.ts';
+import { lostStateRefusal } from './initsigns.ts';
 import { desktopFolder, installShortcut } from './shortcut.ts';
 import { findLink } from './shortcutlink.ts';
 import { shortcutNameFor } from './shortcutnames.ts';
@@ -91,21 +92,24 @@ export function initProject(o: InitOptions): string {
     if (setupIncomplete(root)) return completeSetup(root, o);
     throw new Error(`${root} is a seam project already.`);
   }
+  // No state.json is not the same as new (R82): if anything else of the project is left, starting it again would wipe what the guard saved.
+  const lost = lostStateRefusal(root, o.dataDir);
+  if (lost !== null) throw new Error(lost);
   for (const [flag, folder] of [['--app-root', o.appRoot], ['--legacy', o.legacy]] as const) {
     if (folder !== undefined && !isFolder(resolve(root, folder))) throw new Error(`${flag} ${folder}: there is no such folder in ${root}.`);
   }
   const env: SeamEnv = { dataDir: o.dataDir, ...(o.appRoot === undefined ? {} : { appRoot: o.appRoot }), ...(o.legacy === undefined ? {} : { legacyRoot: o.legacy }) };
   // A plan that is here already must name the same folders (R81): if it does not, the guard would refuse every call, so nothing is written.
   const plan = loadPlan(root);
-  const folders = { appRoot: effectiveAppRoot(plan, env), legacyRoot: effectiveLegacyRoot(plan, env) };
+  if (plan !== null) withEffectiveRoots(plan, env);
   const state: SeamState = { version: 1, phase: 'setup', turn: { agentId: null, file: null, startedAt: null }, strikes: {}, parked: [], done: [], approvals: [], blocks: 0, halted: null };
   mkdirSync(join(root, '.seam'), { recursive: true });
   atomicWrite(join(root, ENV_PATH), `${JSON.stringify(env, null, 2)}\n`);
   writeState(root, o.dataDir, state);
   registerProject(root, o.dataDir);
   const now = o.now ?? new Date();
-  const ctx: Ctx = { root, appRoot: resolve(root, folders.appRoot), dataDir: o.dataDir, pluginRoot: o.pluginRoot, state, plan: null, lock: null, now, legacyRoot: folders.legacyRoot };
-  snapshotProtected(ctx);
+  // The context the next hook will build, plan and all, so the first snapshot holds what that hook expects to find (R82): a file only plan.config protects, say.
+  snapshotProtected(buildCtx(root, o.dataDir, o.pluginRoot, now));
   const notes = [o.appRoot === undefined ? '' : `app folder ${o.appRoot}`, o.legacy === undefined ? '' : `old app ${o.legacy}`].filter((note) => note !== '');
   logLine(root, `Seam project started${notes.length === 0 ? '' : ` (${notes.join(', ')})`}`, now);
   return `Seam project started in ${root}. Next: seam install-shortcut puts a "${shortcutNameFor(root)}" shortcut on your desktop, for approving the big steps.`;
