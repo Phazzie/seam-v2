@@ -44,15 +44,21 @@ export function writeState(root: string, dataDir: string, s: SeamState): void {
 }
 
 /**
+ * `updateState` for a caller that already holds the project lock (a seam script that does several things in one hold:
+ * the lock is not re-entrant, so it cannot call `updateState` from inside its own `withLock`).
+ */
+export function updateStateLocked(root: string, dataDir: string, change: (s: SeamState) => SeamState): SeamState {
+  const next = change(readState(root));
+  writeState(root, dataDir, next);
+  return next;
+}
+
+/**
  * Change the state: read it, let `change` make the new one, write it (and its mirror), all under the
  * lock, and return the new state. If `change` throws, nothing is written. `change` must be synchronous.
  */
 export function updateState(root: string, dataDir: string, change: (s: SeamState) => SeamState): SeamState {
-  return withLock(root, () => {
-    const next = change(readState(root));
-    writeState(root, dataDir, next);
-    return next;
-  });
+  return withLock(root, () => updateStateLocked(root, dataDir, change));
 }
 
 /** Note a block: add one to `state.blocks` (under the lock) and `Blocked: <who> <what>` to the log. */

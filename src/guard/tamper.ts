@@ -29,30 +29,39 @@ import { consequences } from './tamperwho.ts';
 const FILE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const NO_RECORD = "the guard's record of the protected files is missing, so this was blocked to be safe";
 
+/**
+ * `snapshotProtected` for a script that already holds the project lock and has more to do inside the same hold (R76: the lock
+ * is not re-entrant, and a hook must not be able to look between the script's writes and the snapshot that records them).
+ */
+export function snapshotProtectedLocked(ctx: Ctx): void {
+  const frozen = frozenCode(ctx);
+  const rec = emptyRecord();
+  walkRepo(ctx, ({ key, abs, cls }) => {
+    if (cls === null) rec.code.push(key);
+    if (cls !== null || frozen(key)) rec.files[key] = measure(ctx, abs);
+  });
+  saveRecord(ctx, rec);
+  copyState(ctx);
+}
+
 /** Record every protected file (its content too), and the code files that are there, as they are now. Replaces any earlier record. */
 export function snapshotProtected(ctx: Ctx): void {
-  withLock(ctx.root, () => {
-    const frozen = frozenCode(ctx);
-    const rec = emptyRecord();
-    walkRepo(ctx, ({ key, abs, cls }) => {
-      if (cls === null) rec.code.push(key);
-      if (cls !== null || frozen(key)) rec.files[key] = measure(ctx, abs);
-    });
-    saveRecord(ctx, rec);
-    copyState(ctx);
-  });
+  withLock(ctx.root, () => snapshotProtectedLocked(ctx));
+}
+
+/** `acceptChange` for a script that already holds the project lock (see `snapshotProtectedLocked`). */
+export function acceptChangeLocked(ctx: Ctx, relPath: string): void {
+  const given = isAbsolute(relPath) ? relative(ctx.root, relPath) : relPath;
+  const asked = given.replace(/\\/g, '/').replace(/^\.\//, '');
+  const rec = loadRecord(ctx);
+  if (rec === null) throw new Error(`There is no record of the protected files yet, so ${asked} cannot be accepted into it. Take a snapshot first.`);
+  takeIn(ctx, rec, [...Object.keys(rec.files), ...rec.code].find((key) => fold(key) === fold(asked)) ?? asked);
+  saveRecord(ctx, rec);
 }
 
 /** Take one file (a path from the repo root, or an absolute one) into the record as it is now: it was changed, added or removed legitimately. */
 export function acceptChange(ctx: Ctx, relPath: string): void {
-  const given = isAbsolute(relPath) ? relative(ctx.root, relPath) : relPath;
-  const asked = given.replace(/\\/g, '/').replace(/^\.\//, '');
-  withLock(ctx.root, () => {
-    const rec = loadRecord(ctx);
-    if (rec === null) throw new Error(`There is no record of the protected files yet, so ${asked} cannot be accepted into it. Take a snapshot first.`);
-    takeIn(ctx, rec, [...Object.keys(rec.files), ...rec.code].find((key) => fold(key) === fold(asked)) ?? asked);
-    saveRecord(ctx, rec);
-  });
+  withLock(ctx.root, () => acceptChangeLocked(ctx, relPath));
 }
 
 /** What the call that is being checked was allowed to do, and what else was running. */

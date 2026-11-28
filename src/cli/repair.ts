@@ -7,10 +7,10 @@
 import { loadLock, LOCK_PATH } from '../formats/lock.ts';
 import { loadPlan, PLAN_PATH } from '../formats/plan.ts';
 import { STATE_PATH } from '../formats/state.ts';
-import { restoreBroken } from '../guard/tamperrepair.ts';
+import { restoreBrokenLocked } from '../guard/tamperrepair.ts';
 import type { Home } from '../guard/tamperrecord.ts';
 import { logLine } from '../lib/log.ts';
-import { readState } from '../lib/store.ts';
+import { readState, withLock } from '../lib/store.ts';
 import { refusedWithoutKeyboard } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
 
@@ -30,19 +30,23 @@ function unreadable(root: string): string[] {
   });
 }
 
-/** Run `seam repair`: returns the exit code. */
+/** What one look and put-back found: nothing wrong, or what was put back and what still cannot be read. */
+interface Repaired { fine: boolean; restored: string[]; still: string[] }
+
+/** Run `seam repair`: returns the exit code. Looking, putting back and logging happen in one hold of the project lock (R76). */
 export async function repair(io: OwnerIo, home: Home): Promise<number> {
   if (refusedWithoutKeyboard(io, REFUSAL)) return 1;
-  if (unreadable(home.root).length === 0) {
+  const { fine, restored, still }: Repaired = withLock(home.root, () => {
+    if (unreadable(home.root).length === 0) return { fine: true, restored: [], still: [] };
+    const put = restoreBrokenLocked(home);
+    if (put.length > 0) logLine(home.root, `Owner ran repair: put back ${put.join(', ')}`);
+    return { fine: false, restored: put, still: unreadable(home.root) };
+  });
+  if (fine) {
     io.say('Nothing needed repair: plan.json, lock.json and state.json all read fine.');
     return 0;
   }
-  const restored = restoreBroken(home);
-  if (restored.length > 0) {
-    logLine(home.root, `Owner ran repair: put back ${restored.join(', ')}`);
-    io.say(`Put back ${restored.join(', ')} from the guard's saved copy.`);
-  }
-  const still = unreadable(home.root);
+  if (restored.length > 0) io.say(`Put back ${restored.join(', ')} from the guard's saved copy.`);
   for (const path of still) {
     io.say(`${path} is still unreadable, and the guard has no saved copy of it to put back. Fix it by hand (or get it back from git), then run seam edit on it.`);
   }

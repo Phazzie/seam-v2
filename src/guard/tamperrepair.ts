@@ -37,19 +37,23 @@ function putRecorded(home: Home, rec: TamperRecord, path: string): boolean {
 
 /**
  * Put back whichever of plan.json, lock.json and state.json cannot be read. Returns their paths (none if all three
- * read fine, or the guard has nothing to put back from). Under the lock.
+ * read fine, or the guard has nothing to put back from). The caller holds the project lock: `restoreBroken` takes it for this
+ * alone, and `seam repair` holds it for everything it does (R76).
  */
+export function restoreBrokenLocked(home: Home): string[] {
+  const rec = loadRecord(home);
+  const restored: string[] = [];
+  if (rec !== null) {
+    if (broken(() => loadPlan(home.root)) && putRecorded(home, rec, PLAN_PATH)) restored.push(PLAN_PATH);
+    if (broken(() => loadLock(home.root)) && putRecorded(home, rec, LOCK_PATH)) restored.push(LOCK_PATH);
+    if (restored.length > 0) saveRecord(home, rec);
+  }
+  if (broken(() => readState(home.root)) && restoreState(home)) restored.push(STATE_PATH);
+  for (const path of restored) logLine(home.root, `Put back ${path}: it had been overwritten with text the guard cannot read.`);
+  return restored;
+}
+
+/** `restoreBrokenLocked` under the project lock. */
 export function restoreBroken(home: Home): string[] {
-  return withLock(home.root, () => {
-    const rec = loadRecord(home);
-    const restored: string[] = [];
-    if (rec !== null) {
-      if (broken(() => loadPlan(home.root)) && putRecorded(home, rec, PLAN_PATH)) restored.push(PLAN_PATH);
-      if (broken(() => loadLock(home.root)) && putRecorded(home, rec, LOCK_PATH)) restored.push(LOCK_PATH);
-      if (restored.length > 0) saveRecord(home, rec);
-    }
-    if (broken(() => readState(home.root)) && restoreState(home)) restored.push(STATE_PATH);
-    for (const path of restored) logLine(home.root, `Put back ${path}: it had been overwritten with text the guard cannot read.`);
-    return restored;
-  });
+  return withLock(home.root, () => restoreBrokenLocked(home));
 }

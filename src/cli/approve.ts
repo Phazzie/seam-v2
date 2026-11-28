@@ -6,11 +6,11 @@ import type { ApprovalRecord } from '../formats/state.ts';
 import { removeFile } from '../lib/atomic.ts';
 import { writeLock } from '../lib/fingerprint.ts';
 import { logLine } from '../lib/log.ts';
-import { updateState } from '../lib/store.ts';
-import { snapshotProtected } from '../guard/tamper.ts';
+import { readState, updateStateLocked, withLock } from '../lib/store.ts';
+import { snapshotProtectedLocked } from '../guard/tamper.ts';
 import { buildCtx } from '../guard/context.ts';
 import type { Ctx, Phase } from '../types.ts';
-import { accept } from './accept.ts';
+import { acceptLocked } from './accept.ts';
 import { moveFor } from './moves.ts';
 import type { Kind } from './moves.ts';
 import { THE_WINDOW, refusedOutsideWindow } from './owner.ts';
@@ -27,13 +27,17 @@ export type ApproveResult = { ok: true; kind: Kind; phase: Phase } | { ok: false
 const refused = (reason: string, retry = false): ApproveResult => ({ ok: false, retry, reason });
 
 /** Why this request cannot be approved right now: the files are not as they were when it was asked for, or it does not fit the phase. Null if it can. */
-function whyNot(ctx: Ctx, pending: Pending): string | null {
+function whyNot(ctx: Ctx, pending: Pending, phase: Phase = ctx.state.phase): string | null {
   if (!sameFingerprints(fingerprintsOf(ctx.root, ctx.plan), pending.fingerprints)) return STALE;
-  const move = moveFor(pending.kind, ctx.state.phase);
+  const move = moveFor(pending.kind, phase);
   return move.ok ? null : move.why;
 }
 
-/** Make the approval happen: the lock (for a freeze), the record of it, the phase, and the guard's own record of the files this changed. */
+/**
+ * Make the approval happen: the lock (for a freeze), the record of it, the phase, and the guard's own record of the files this
+ * changed. The caller holds the project lock for all of it, and the tamper check settles under that lock, so it cannot look at the
+ * new lock.json between its being written and its being recorded (R76).
+ */
 function apply(ctx: Ctx, pending: Pending, next: Phase): ApproveResult {
   const { kind } = pending;
   if (kind === 'freeze') {
@@ -41,27 +45,30 @@ function apply(ctx: Ctx, pending: Pending, next: Phase): ApproveResult {
     writeLock(ctx.root, ctx.plan); // first: if a planned file is not there it throws, and nothing has changed
   }
   const clears = kind === 'park' || kind === 'edit';
-  updateState(ctx.root, ctx.dataDir, (s) => {
+  updateStateLocked(ctx.root, ctx.dataDir, (s) => {
     const record: ApprovalRecord = { id: `${kind}-${s.approvals.length + 1}`, kind, at: ctx.now.toISOString(), fingerprints: pending.fingerprints, summary: pending.summary };
     return { ...s, phase: next, approvals: [...s.approvals, record], halted: clears ? null : s.halted };
   });
   removeFile(join(ctx.root, PENDING_PATH));
   logLine(ctx.root, `Owner approved ${kind}`);
   // The files this changed are protected: take them into the guard's record, or its next check would put them back.
-  if (kind === 'freeze') snapshotProtected(buildCtx(ctx.root, ctx.dataDir, ctx.pluginRoot, ctx.now));
-  else accept(ctx, PENDING_PATH);
+  if (kind === 'freeze') snapshotProtectedLocked(buildCtx(ctx.root, ctx.dataDir, ctx.pluginRoot, ctx.now));
+  else acceptLocked(ctx, PENDING_PATH);
   return { ok: true, kind, phase: next };
 }
 
-/** Check the code and what was asked for, then approve. A wrong code records nothing and may be tried again. */
+/** Check the code and what was asked for, then approve, all in one hold of the project lock. A wrong code records nothing and may be tried again. */
 export function approveCore(input: { typed: string }, ctx: Ctx): ApproveResult {
-  const pending = loadPending(ctx.root);
-  if (pending === null) return refused(NOTHING_WAITING);
-  if (input.typed !== pending.code) return refused('that is not the code', true);
-  const problem = whyNot(ctx, pending);
-  if (problem !== null) return refused(problem);
-  const move = moveFor(pending.kind, ctx.state.phase);
-  return apply(ctx, pending, move.ok ? move.next : ctx.state.phase);
+  return withLock(ctx.root, () => {
+    const pending = loadPending(ctx.root);
+    if (pending === null) return refused(NOTHING_WAITING);
+    if (input.typed !== pending.code) return refused('that is not the code', true);
+    const { phase } = readState(ctx.root); // as it is now, not as it was when the command started
+    const problem = whyNot(ctx, pending, phase);
+    if (problem !== null) return refused(problem);
+    const move = moveFor(pending.kind, phase);
+    return apply(ctx, pending, move.ok ? move.next : phase);
+  });
 }
 
 /**

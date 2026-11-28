@@ -4,8 +4,9 @@
 import { join } from 'node:path';
 import { atomicWrite } from '../lib/atomic.ts';
 import { logLine } from '../lib/log.ts';
+import { withLock } from '../lib/store.ts';
 import type { Ctx } from '../types.ts';
-import { accept } from './accept.ts';
+import { acceptLocked } from './accept.ts';
 import { isKind, KINDS, moveFor } from './moves.ts';
 import { fingerprintsOf, missingPlanned, newCode, PENDING_PATH } from './pending.ts';
 import type { Pending } from './pending.ts';
@@ -21,10 +22,13 @@ export function requestApproval(ctx: Ctx, kind: string): string {
     const missing = missingPlanned(ctx.root, ctx.plan);
     if (missing.length > 0) throw new Error(`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} in the plan but not on disk, so the plan cannot be frozen yet.`);
   }
-  const fingerprints = fingerprintsOf(ctx.root, ctx.plan);
-  const pending: Pending = { kind, code: newCode(), summary: summaryOf(ctx, kind, fingerprints), fingerprints };
-  atomicWrite(join(ctx.root, PENDING_PATH), `${JSON.stringify(pending, null, 2)}\n`);
-  accept(ctx, PENDING_PATH);
-  logLine(ctx.root, `Asked the owner to approve ${kind}`);
+  // One hold of the lock for all of it (R76): until the request is in the guard's record, a hook's check would move it aside as a stranger.
+  withLock(ctx.root, () => {
+    const fingerprints = fingerprintsOf(ctx.root, ctx.plan);
+    const pending: Pending = { kind, code: newCode(), summary: summaryOf(ctx, kind, fingerprints), fingerprints };
+    atomicWrite(join(ctx.root, PENDING_PATH), `${JSON.stringify(pending, null, 2)}\n`);
+    acceptLocked(ctx, PENDING_PATH);
+    logLine(ctx.root, `Asked the owner to approve ${kind}`);
+  });
   return `Asked the owner to approve ${kind}. Nothing is approved until they open Seam Approve on their desktop and type the code it shows.`;
 }

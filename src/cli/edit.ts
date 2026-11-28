@@ -4,16 +4,17 @@
 // that entry (a locked code file by named item, anything else whole), so the lock agrees with the file too.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { LOCK_PATH, parseLock } from '../formats/lock.ts';
+import { loadLock, LOCK_PATH, parseLock } from '../formats/lock.ts';
 import type { FileLock, Lock } from '../formats/lock.ts';
 import { fold, hashOf, loadRecord } from '../guard/tamperrecord.ts';
 import { atomicWrite } from '../lib/atomic.ts';
 import { fingerprintSource, parseProblem, parseSource } from '../lib/codeprint.ts';
 import { logLine } from '../lib/log.ts';
 import { classify } from '../lib/paths.ts';
+import { withLock } from '../lib/store.ts';
 import { hashFile } from '../lib/text.ts';
 import type { Ctx } from '../types.ts';
-import { accept } from './accept.ts';
+import { acceptLocked } from './accept.ts';
 import { refusedOutsideWindow } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
 
@@ -109,12 +110,16 @@ export async function editFile(io: OwnerIo, load: () => Ctx, file: string | unde
     io.say('Nothing was accepted.');
     return 1;
   }
-  if (lock !== null) {
-    atomicWrite(join(ctx.root, LOCK_PATH), `${JSON.stringify(lock, null, 2)}\n`);
-    accept(ctx, LOCK_PATH, true);
-  }
-  accept(ctx, key, true);
-  logLine(ctx.root, `Owner accepted a hand edit to ${key}`);
+  // One hold of the lock for all of it (R76), with the lock and the file read again inside it: they may have changed while the owner thought.
+  withLock(ctx.root, () => {
+    const now = relocked(loadLock(ctx.root), key, abs);
+    if (now !== null) {
+      atomicWrite(join(ctx.root, LOCK_PATH), `${JSON.stringify(now, null, 2)}\n`);
+      acceptLocked(ctx, LOCK_PATH, true);
+    }
+    acceptLocked(ctx, key, true);
+    logLine(ctx.root, `Owner accepted a hand edit to ${key}`);
+  });
   io.say(`Accepted ${key}.`);
   return 0;
 }
