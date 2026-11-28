@@ -1,6 +1,6 @@
 // The "Seam Approve" desktop shortcut. `seam install-shortcut` writes `seam-approve.cmd` into the data folder (it goes to
-// the project and runs `seam approve`) and makes a shortcut to it on the desktop. `seam approve` then accepts only a
-// window that was opened from that file: somewhere up its chain of parent processes there is a cmd.exe whose command line
+// the project and runs `seam window`, the owner's one place, R77) and makes a shortcut to it on the desktop. `seam window` and
+// `seam approve` then accept only a window that was opened from that file: somewhere up its chain of parent processes there is a cmd.exe whose command line
 // names the installed seam-approve.cmd (what Windows runs for a shortcut to it). That stops the realistic case, the AI
 // starting a window by itself with node, npx or Start-Process; it is a check against a helpful AI, not against an attacker.
 import { spawnSync } from 'node:child_process';
@@ -18,8 +18,11 @@ export interface ProcessRow { name: string; commandLine: string }
 
 /** Run a PowerShell script (passed encoded, so no quoting can change it) and give its output. Throws, in plain words, if it fails. */
 function powershell(script: string, what: string): string {
-  const encoded = Buffer.from(`[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ${script}`, 'utf16le').toString('base64');
-  const done = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+  // No profile, text output, no progress bar, UTF-8 out so a non-ASCII path survives, and a failure caught and written as one plain line:
+  // with -EncodedCommand and a redirected stderr, PowerShell would otherwise write its error as CLIXML (a page of XML).
+  const body = `try { ${script} } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`;
+  const encoded = Buffer.from(`$ProgressPreference = 'SilentlyContinue'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ${body}`, 'utf16le').toString('base64');
+  const done = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
     encoding: 'utf8', windowsHide: true, timeout: POWERSHELL_LIMIT_MS,
   });
   if (done.error !== undefined) throw new Error(`Could not ${what}: PowerShell did not run (${done.error.message}).`);
@@ -59,11 +62,19 @@ export function launchedByShortcut(script: string, chain: (pid: number) => Proce
   return platform === 'win32' && shortcutInChain(chain(process.ppid), script);
 }
 
-/** What seam-approve.cmd holds: go to the project, run the approval, and wait so the owner can read the answer. */
+/** A path as it goes inside quotes in a .cmd file: a quote or a line break cannot, and cmd reads `%name%` as a variable, so `%` is doubled. */
+function forCmd(path: string): string {
+  if (/["\r\n\0]/.test(path)) throw new Error(`The folder ${JSON.stringify(path)} can't be used in the shortcut's script (a quote or a line break in its name).`);
+  return path.replace(/%/g, '%%');
+}
+
+/**
+ * What seam-approve.cmd holds: switch the console to UTF-8 (the file is UTF-8, and cmd reads it in the console's code page, so a
+ * path with an accent would break), go to the project, run the window, and wait so the owner can read the answer.
+ */
 export function approveScript(root: string, pluginRoot: string): string {
-  if (/["\r\n\0]/.test(root)) throw new Error(`The folder ${JSON.stringify(root)} can't be used in the shortcut's script (a quote or a line break in its name).`);
-  const folder = root.replace(/%/g, '%%'); // cmd reads %name% as a variable
-  return ['@echo off', `cd /d "${folder}"`, `node "${win32.join(pluginRoot, 'dist', 'seam.mjs')}" approve`, 'pause', ''].join('\r\n');
+  const seam = win32.join(pluginRoot, 'dist', 'seam.mjs');
+  return ['@echo off', 'chcp 65001 >nul', `cd /d "${forCmd(root)}"`, `node "${forCmd(seam)}" window`, 'pause', ''].join('\r\n');
 }
 
 export interface ShortcutOptions {

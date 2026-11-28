@@ -1,6 +1,7 @@
-// The `seam` command's subcommands: init, request, approve, report, install-shortcut, and the owner's edit and repair.
-// The main AI may run report, status, request, init, install-shortcut and help (the guard's list); approve, edit and
-// repair are the owner's, each refusing to run without a real keyboard, and approve and edit only from the shortcut's window.
+// The `seam` command's subcommands: init, request, report, install-shortcut, and the owner's window, approve, edit and repair.
+// The main AI may run report, status, request, init, install-shortcut and help (the guard's list); the rest are the owner's, each
+// refusing to run without a real keyboard, and the window and approve only from the shortcut's window (R77: the window is
+// the owner's one place, and what the Seam Approve shortcut runs).
 import { join } from 'node:path';
 import { readCliEnv } from '../config/cli.ts';
 import { approve } from './approve.ts';
@@ -12,6 +13,7 @@ import { repair } from './repair.ts';
 import { requestApproval } from './request.ts';
 import { installShortcut, SCRIPT_NAME } from './shortcut.ts';
 import { terminal } from './terminal.ts';
+import { windowCommand } from './window.ts';
 
 const HELP = [
   'seam <command>',
@@ -19,10 +21,11 @@ const HELP = [
   '  request <kind>      ask the owner to approve a step: features, freeze, flips, cutover, reopen, park or edit',
   '  init                start a seam project in this folder (--app-root <dir>, --legacy <dir>)',
   '  install-shortcut    put "Seam Approve" on the desktop',
-  'For the owner only (they refuse to run without a real keyboard, and approve and edit only from the Seam Approve window):',
+  'For the owner only (they refuse to run without a real keyboard, and window and approve only from the Seam Approve shortcut):',
+  '  window              what the Seam Approve shortcut runs: approve a request, or a menu (report, accept your own edits, repair)',
   '  approve             approve what was asked for',
-  '  edit <file>         accept your own change to a protected file',
-  '  repair              put back a plan, lock or state file that cannot be read',
+  '  edit <file>         accept your own change to one protected file (from your own terminal)',
+  '  repair              put back a plan, lock or state file that cannot be read (from your own terminal)',
 ].join('\n');
 
 /** The value after `flag`, or undefined. */
@@ -55,6 +58,8 @@ export async function main(args: string[], env: NodeJS.ProcessEnv, cwd: string, 
       case 'request':
         out(requestApproval(loadCtx(where()), rest[0] ?? ''));
         return 0;
+      case 'window':
+        return await windowCommand(owner.io, () => loadCtx(where()), where);
       case 'approve':
         return await approve(owner.io, () => loadCtx(where()));
       case 'edit':

@@ -1,24 +1,23 @@
-// `seam edit <file>`: take the owner's own change to a protected file as the new truth. Without it the tamper check
-// would undo the change as the AI's tampering. It runs in the approval window (a keyboard, opened from the shortcut),
-// asks once, then makes the guard's record hold the file as it is now, and, if the lock has an entry for it, re-fingerprints
-// that entry (a locked code file by named item, anything else whole), so the lock agrees with the file too.
+// `seam edit <file>`: take the owner's own change to one protected file as the new truth. Without it the tamper check
+// would undo the change as the AI's tampering. It needs a real keyboard (the owner's own terminal, or the Seam Approve
+// window), not the shortcut: the window itself offers "accept my own edits" for every file at once (window.ts), and this
+// is the one-file form for a terminal: `node <plugin folder>/dist/seam.mjs edit <file>`. It asks once, then makes the guard's
+// record hold the file as it is now, and, if the lock has an entry for it, re-fingerprints that entry (relock.ts).
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { loadLock, LOCK_PATH, parseLock } from '../formats/lock.ts';
-import type { FileLock, Lock } from '../formats/lock.ts';
+import { loadLock, LOCK_PATH } from '../formats/lock.ts';
 import { fold, hashOf, loadRecord } from '../guard/tamperrecord.ts';
 import { atomicWrite } from '../lib/atomic.ts';
-import { fingerprintSource, parseProblem, parseSource } from '../lib/codeprint.ts';
 import { logLine } from '../lib/log.ts';
 import { classify } from '../lib/paths.ts';
 import { withLock } from '../lib/store.ts';
-import { hashFile } from '../lib/text.ts';
 import type { Ctx } from '../types.ts';
 import { acceptLocked } from './accept.ts';
-import { refusedOutsideWindow } from './owner.ts';
+import { refusedWithoutKeyboard } from './owner.ts';
 import type { OwnerIo } from './owner.ts';
+import { relocked } from './relock.ts';
 
-const REFUSAL = 'accepting your own edits happens in the Seam Approve window on your desktop';
+const REFUSAL = 'edits are accepted in your own terminal or the Seam Approve window, not through Claude';
 /** Kinds of path the guard does not protect: nothing to accept. */
 const UNWATCHED = new Set(['other-in-repo', 'ignored', 'generated']);
 
@@ -30,28 +29,6 @@ function keyOf(ctx: Ctx, cwd: string, file: string): string | null {
   if (key === '' || key === '..' || key.startsWith('../') || isAbsolute(key)) return null;
   const known = [...Object.keys(loadRecord(ctx)?.files ?? {}), ...Object.keys(ctx.lock?.files ?? {})].find((name) => fold(name) === fold(key));
   return known ?? key;
-}
-
-/** A locked code file's entry for the text it holds now. Throws, in plain words, if the text is not code that can be read. */
-function codeEntry(key: string, text: string): FileLock {
-  const sf = parseSource(key, text);
-  const broken = parseProblem(sf);
-  if (broken !== null) throw new Error(`${key} can't be accepted: ${broken}`);
-  return fingerprintSource(sf);
-}
-
-/** The lock with this file's entry made to match the file, or null if the lock has no entry for it (nothing to change). */
-function relocked(lock: Lock | null, key: string, abs: string): Lock | null {
-  const name = Object.keys(lock?.files ?? {}).find((n) => fold(n) === fold(key));
-  if (lock === null || name === undefined) return null;
-  const files: Record<string, FileLock> = { ...lock.files };
-  if (!existsSync(abs)) {
-    delete files[name];
-  } else {
-    const bytes = readFileSync(abs);
-    files[name] = lock.files[name].kind === 'code' ? codeEntry(key, bytes.toString('utf8')) : { kind: 'whole', hash: hashFile(bytes) };
-  }
-  return parseLock({ version: 1, files }, 'The lock to write');
 }
 
 /** Does the guard already hold the file exactly as it is now? */
@@ -73,7 +50,7 @@ function readable(load: () => Ctx, io: OwnerIo): Ctx | null {
 
 /** Run `seam edit`: returns the exit code. `load` reads the project and is not called until the window has been checked. */
 export async function editFile(io: OwnerIo, load: () => Ctx, file: string | undefined, cwd: string): Promise<number> {
-  if (refusedOutsideWindow(io, REFUSAL)) return 1;
+  if (refusedWithoutKeyboard(io, REFUSAL)) return 1;
   if (file === undefined || file === '') {
     io.say('Which file? Use: seam edit <file>');
     return 1;

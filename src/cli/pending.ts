@@ -13,6 +13,8 @@ import { ApprovalRecordSchema } from '../formats/state.ts';
 import { locate, wholeFiles } from '../lib/lockfiles.ts';
 import type { Located } from '../lib/lockfiles.ts';
 import { hashFile } from '../lib/text.ts';
+import type { Ctx } from '../types.ts';
+import type { Kind } from './moves.ts';
 
 export const PENDING_PATH = '.seam/pending.json';
 /** No I, L, O, 0 or 1: nothing in it can be misread from a screen. */
@@ -59,6 +61,14 @@ export function fingerprintsOf(root: string, plan: Plan | null): Record<string, 
     wholeFiles(root, plan).forEach(add);
   }
   return Object.fromEntries([...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+/**
+ * What a request of `kind` is about: the plan and what the freeze would lock; for an edit nothing, since the owner makes the changes
+ * after it is asked for (R77: the window lists what differs when it opens, and approving takes exactly that), so it can never go stale.
+ */
+export function fingerprintsFor(ctx: Ctx, kind: Kind): Record<string, string> {
+  return kind === 'edit' ? {} : fingerprintsOf(ctx.root, ctx.plan);
 }
 
 /** Do two sets of fingerprints name the same files with the same hashes? */

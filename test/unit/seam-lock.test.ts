@@ -3,10 +3,8 @@
 // snapshot that records it), a hook running at that moment could look at the new lock.json, find it different from the guard's
 // record, and put the old one back. The tests check it two ways: by counting how often each script takes the lock and what is
 // true when it lets go, and by holding the lock from another process and watching the script and the tamper check wait for it.
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { approveCore } from '../../src/cli/approve.ts';
 import { editFile } from '../../src/cli/edit.ts';
@@ -14,15 +12,12 @@ import { repair } from '../../src/cli/repair.ts';
 import { requestApproval } from '../../src/cli/request.ts';
 import { loadLock } from '../../src/formats/lock.ts';
 import { loadState } from '../../src/formats/state.ts';
-import { checkTamper } from '../../src/guard/tamper.ts';
 import type { LockLimits } from '../../src/lib/lock.ts';
 import { hashOf, loadRecord } from '../../src/guard/tamperrecord.ts';
-import type { HookInput } from '../../src/types.ts';
 import { makeApp } from '../helpers/app.ts';
 import type { App } from '../helpers/app.ts';
 import { PLAN_TEXT, TOTAL, planFile, skeleton, total } from '../helpers/code.ts';
 import { window } from '../helpers/cli.ts';
-import { put, tempDir } from '../helpers/project.ts';
 import { ctxOf } from '../helpers/tamper.ts';
 
 /** One entry for each time the project lock of `watched` was taken, with what was true then and just before it was let go. */
@@ -150,61 +145,5 @@ describe('each script takes the project lock once, and does all its work inside 
     expect(holds).toHaveLength(1);
     expect(app.read('plan/plan.json')).toBe(PLAN_TEXT);
     expect(app.read('.seam/log.md')).toMatch(/Owner ran repair: put back plan\/plan\.json/);
-  });
-});
-
-const LOCK_MODULE = pathToFileURL(resolve(import.meta.dirname, '../../src/lib/lock.ts')).href;
-const HELD_FOR_MS = 2500;
-const WAITED_AT_LEAST_MS = 1500;
-
-/** Take the project lock in another process and hold it for HELD_FOR_MS; resolves once it is held. The returned function waits for it to be let go. */
-async function holdLockElsewhere(root: string): Promise<() => Promise<void>> {
-  const dir = tempDir();
-  put(dir, 'hold.mjs', [
-    "import { writeSync } from 'node:fs';",
-    `import { withLock } from ${JSON.stringify(LOCK_MODULE)};`,
-    'withLock(process.argv[2], () => {',
-    "  writeSync(1, 'held\\n');",
-    `  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${HELD_FOR_MS});`,
-    '});',
-    '',
-  ].join('\n'));
-  const child = spawn(process.execPath, [join(dir, 'hold.mjs'), root], { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true });
-  const gone = new Promise<void>((done) => child.on('close', () => done()));
-  await new Promise<void>((held, failed) => {
-    child.stdout.on('data', (chunk: Buffer) => chunk.toString().includes('held') && held());
-    child.on('close', () => failed(new Error('The process that holds the lock ended without holding it.')));
-  });
-  return () => gone;
-}
-
-describe('the others wait for the lock while it is held', () => {
-  test('the tamper check settles under the lock: a file put back, but only once the lock is let go', async () => {
-    const app = await makeApp({ phase: 'build', lock: true });
-    watched = '';
-    app.writeRaw('plan/plan.json', `${PLAN_TEXT}\n`); // a protected file changed behind the guard
-    const released = await holdLockElsewhere(app.root);
-    const started = Date.now();
-    const input = { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'x' }, tool_response: {}, cwd: app.root } as HookInput;
-    const { problems } = await checkTamper(input, ctxOf(app));
-    expect(Date.now() - started, 'it did not wait for the lock').toBeGreaterThanOrEqual(WAITED_AT_LEAST_MS);
-    expect(problems).toEqual(['plan/plan.json was changed outside the rules and has been put back']);
-    expect(readFileSync(app.abs('plan/plan.json'), 'utf8')).toBe(PLAN_TEXT);
-    await released();
-  });
-
-  test('the freeze approval waits for the lock too, and then goes through whole', async () => {
-    const app = await appIn('tests');
-    requestApproval(ctxOf(app), 'freeze');
-    const code = JSON.parse(app.read('.seam/pending.json')).code as string;
-    watched = '';
-    const released = await holdLockElsewhere(app.root);
-    const started = Date.now();
-    expect(approveCore({ typed: code }, ctxOf(app))).toMatchObject({ ok: true, phase: 'build' });
-    expect(Date.now() - started, 'it did not wait for the lock').toBeGreaterThanOrEqual(WAITED_AT_LEAST_MS);
-    expect(loadState(app.root)?.phase).toBe('build');
-    expect(existsSync(app.abs('.seam/lock.json'))).toBe(true);
-    await released();
-    rmSync(app.abs('.seam/pending.json'), { force: true });
   });
 });

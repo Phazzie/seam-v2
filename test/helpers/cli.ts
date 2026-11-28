@@ -80,9 +80,10 @@ export interface Window {
 
 /**
  * The owner's side: a window with a keyboard and a screen. `typed` are the lines the owner types, one for each question
- * (running out is a test bug). By default the window has been opened from the shortcut; `opts` say otherwise.
+ * (running out is a test bug); an entry may be a function of everything on the screen so far, for an answer that depends on what
+ * the window showed (the code). By default the window has been opened from the shortcut; `opts` say otherwise.
  */
-export function window(typed: string[], opts: Partial<Pick<OwnerIo, 'stdinTty' | 'stdoutTty' | 'byShortcut'>> = {}): Window {
+export function window(typed: Array<string | ((screen: string) => string)>, opts: Partial<Pick<OwnerIo, 'stdinTty' | 'stdoutTty' | 'byShortcut'>> = {}): Window {
   const said: string[] = [];
   const asked: string[] = [];
   const lines = [...typed];
@@ -95,9 +96,15 @@ export function window(typed: string[], opts: Partial<Pick<OwnerIo, 'stdinTty' |
       asked.push(question);
       const line = lines.shift();
       if (line === undefined) return Promise.reject(new Error(`The test did not type an answer to: ${question}`));
-      return Promise.resolve(line);
+      return Promise.resolve(typeof line === 'function' ? line(said.join('\n')) : line);
     },
     ...opts,
   };
   return { io, said, asked };
+}
+
+/** The code the window showed last (`Code: ABCD`), for an owner who types what is on the screen. */
+export function shownCode(screen: string): string {
+  const all = [...screen.matchAll(/Code: ([A-Z0-9]{4})/g)];
+  return all.at(-1)?.[1] ?? '';
 }

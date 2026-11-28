@@ -17,19 +17,22 @@ const SCRIPT = 'C:\\Users\\owner\\.claude\\plugins\\data\\seam-v2\\seam-approve.
 const row = (name: string, commandLine: string) => ({ name, commandLine });
 
 describe('seam-approve.cmd', () => {
-  test('goes to the project, runs the approval, and waits so the owner can read the answer', () => {
+  test('R77: switches the console to UTF-8, goes to the project, runs the window, and waits so the owner can read the answer', () => {
     expect(approveScript('C:\\work\\my app', 'C:\\plugins\\seam-v2')).toBe(
-      ['@echo off', 'cd /d "C:\\work\\my app"', 'node "C:\\plugins\\seam-v2\\dist\\seam.mjs" approve', 'pause', ''].join('\r\n'),
+      ['@echo off', 'chcp 65001 >nul', 'cd /d "C:\\work\\my app"', 'node "C:\\plugins\\seam-v2\\dist\\seam.mjs" window', 'pause', ''].join('\r\n'),
     );
   });
 
-  test('a % in a folder name is doubled, so cmd does not read it as a variable', () => {
+  test('a % in a folder name is doubled, so cmd does not read it as a variable: in the project\'s path and in the plugin\'s', () => {
     expect(approveScript('C:\\100%real', 'C:\\p')).toContain('cd /d "C:\\100%%real"');
+    expect(approveScript('C:\\r', 'C:\\100%plugin')).toContain('node "C:\\100%%plugin\\dist\\seam.mjs" window');
   });
 
-  test('a folder name that could end the quote or the line is refused', () => {
+  test('a folder name that could end the quote or the line is refused, in either path', () => {
     expect(() => approveScript('C:\\a"b', 'C:\\p')).toThrow(/can't be used/);
     expect(() => approveScript('C:\\a\nb', 'C:\\p')).toThrow(/can't be used/);
+    expect(() => approveScript('C:\\r', 'C:\\a"b')).toThrow(/can't be used/);
+    expect(() => approveScript('C:\\r', 'C:\\a\rb')).toThrow(/can't be used/);
   });
 });
 

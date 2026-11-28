@@ -8,7 +8,7 @@ import { withLock } from '../lib/store.ts';
 import type { Ctx } from '../types.ts';
 import { acceptLocked } from './accept.ts';
 import { isKind, KINDS, moveFor } from './moves.ts';
-import { fingerprintsOf, missingPlanned, newCode, PENDING_PATH } from './pending.ts';
+import { fingerprintsFor, missingPlanned, newCode, PENDING_PATH } from './pending.ts';
 import type { Pending } from './pending.ts';
 import { summaryOf } from './summary.ts';
 
@@ -24,7 +24,7 @@ export function requestApproval(ctx: Ctx, kind: string): string {
   }
   // One hold of the lock for all of it (R76): until the request is in the guard's record, a hook's check would move it aside as a stranger.
   withLock(ctx.root, () => {
-    const fingerprints = fingerprintsOf(ctx.root, ctx.plan);
+    const fingerprints = fingerprintsFor(ctx, kind);
     const pending: Pending = { kind, code: newCode(), summary: summaryOf(ctx, kind, fingerprints), fingerprints };
     atomicWrite(join(ctx.root, PENDING_PATH), `${JSON.stringify(pending, null, 2)}\n`);
     acceptLocked(ctx, PENDING_PATH);

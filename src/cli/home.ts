@@ -34,14 +34,15 @@ export function whereAmI(cwd: string, env: CliEnv, pluginRoot: string): Where {
   const root = findRoot(cwd);
   if (root === null) throw new Error(`${cwd} is not a seam project (there is no .seam folder here or above it). Run seam init to start one.`);
   const dataDir = env.dataDir ?? readEnvFile(root)?.dataDir;
-  if (dataDir === undefined) throw new Error(`${join(root, ENV_PATH)} is missing, so seam does not know where its data folder is. Set SEAM_DATA_DIR to it.`);
+  if (dataDir === undefined) throw new Error("This project's setup is incomplete; run seam init again from Claude Code.");
+  if (!existsSync(dataDir)) throw new Error(`The folder that holds this project's guard records (${dataDir}) no longer exists, so seam cannot find them. Run seam init again from Claude Code to set it up afresh.`);
   return { root, dataDir, pluginRoot };
 }
 
 /** The data folder `seam init` writes down: the one it was told, or the one Claude Code gave it. */
 export function dataDirForInit(env: CliEnv): string {
   const dir = env.dataDir ?? env.pluginData;
-  if (dir === null) throw new Error("seam doesn't know where the plugin's data folder is. Set SEAM_DATA_DIR to it (Claude Code keeps it under .claude/plugins/data/) and run seam init again.");
+  if (dir === null) throw new Error("seam doesn't know where the plugin keeps its data. Start it from Claude Code, or set SEAM_DATA_DIR to the plugin's data folder (Claude Code keeps it under .claude/plugins/data/), and run seam init again.");
   return dir;
 }
 

@@ -94,10 +94,10 @@ export function renderReport(ctx: Ctx, now: Date): string {
   const { state } = ctx;
   const lines = ['Seam report', `Phase: ${state.phase}, ${PHASE_WORDS[state.phase]}.`];
   if (state.halted !== null) {
-    lines.push(`STOPPED: ${state.halted}`, 'Nothing more will be built until you have looked into it. Ask Claude to request a "park" or an "edit" approval, then approve it in Seam Approve on your desktop.');
+    lines.push(`STOPPED: ${state.halted}`, 'Nothing more will be built until you have looked into it. Open the Seam Approve window on your desktop to look at it and carry on.');
   }
   const pending = loadPending(ctx.root);
-  if (pending !== null) lines.push(`Waiting for you: your approval to ${KIND_WORDS[pending.kind]}. Open Seam Approve on your desktop.`);
+  if (pending !== null) lines.push(`Waiting for you: your approval to ${KIND_WORDS[pending.kind]}. Open the Seam Approve window on your desktop.`);
   lines.push('', ...fileLines(ctx), '', ...blockSection(ctx), '', ...gapSection(ctx, now));
   return lines.join('\n');
 }

@@ -2,16 +2,16 @@
 // data folder written down in env.json, since the commands cannot see CLAUDE_PLUGIN_DATA), lists the project in the
 // data folder (so deleting `.seam/` cannot switch the guard off), takes the first snapshot of the protected files, and
 // logs it. The project is listed only once its state exists: a listed folder with no state is "missing", and blocks every call.
-import { mkdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { SeamState } from '../formats/state.ts';
 import { snapshotProtected } from '../guard/tamper.ts';
 import { atomicWrite } from '../lib/atomic.ts';
 import { logLine } from '../lib/log.ts';
 import { registerProject } from '../lib/paths.ts';
-import { writeState } from '../lib/store.ts';
+import { readState, writeState } from '../lib/store.ts';
 import type { Ctx } from '../types.ts';
-import { ENV_PATH, findRoot } from './home.ts';
+import { ENV_PATH, findRoot, readEnvFile } from './home.ts';
 import type { SeamEnv } from './home.ts';
 
 export interface InitOptions {
@@ -34,11 +34,36 @@ const isFolder = (path: string): boolean => {
   }
 };
 
+/** Is the setup of this project (which has its state) not whole: no `.seam/env.json`, or one that names a data folder that is gone? */
+function setupIncomplete(root: string): boolean {
+  const env = readEnvFile(root);
+  return env === null || !existsSync(env.dataDir);
+}
+
+/**
+ * Make an incomplete setup whole again (R77): write env.json, make sure the data folder is there and the project is listed in it, and put
+ * the state's copy where the guard looks for it. The guard's record of the protected files lives in the data folder; if that was lost,
+ * the owner's "accept my own edits" in the Seam Approve window takes a fresh one, so nothing the AI can run does.
+ */
+function completeSetup(root: string, o: InitOptions): string {
+  const env: SeamEnv = { ...readEnvFile(root), dataDir: o.dataDir };
+  mkdirSync(o.dataDir, { recursive: true });
+  atomicWrite(join(root, ENV_PATH), `${JSON.stringify(env, null, 2)}\n`);
+  registerProject(root, o.dataDir);
+  writeState(root, o.dataDir, readState(root));
+  logLine(root, 'Seam project setup completed again', o.now);
+  return `This project's setup was incomplete and is whole again (its records folder is ${o.dataDir}). If the guard then says its record of the protected files is missing, open the Seam Approve window and choose "Accept my own edits" to take a fresh one.`;
+}
+
 /** Start the project. Returns what to tell the owner. Throws, in plain words, if it should not be started here. */
 export function initProject(o: InitOptions): string {
   const root = realpathSync.native(o.cwd);
   const existing = findRoot(root, ['.seam/state.json']);
-  if (existing !== null) throw new Error(existing === root ? `${root} is a seam project already.` : `${root} is already inside the seam project at ${existing}, so a new one is not started here.`);
+  if (existing !== null && existing !== root) throw new Error(`${root} is already inside the seam project at ${existing}, so a new one is not started here.`);
+  if (existing !== null) {
+    if (setupIncomplete(root)) return completeSetup(root, o);
+    throw new Error(`${root} is a seam project already.`);
+  }
   for (const [flag, folder] of [['--app-root', o.appRoot], ['--legacy', o.legacy]] as const) {
     if (folder !== undefined && !isFolder(resolve(root, folder))) throw new Error(`${flag} ${folder}: there is no such folder in ${root}.`);
   }
