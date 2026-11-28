@@ -3,13 +3,15 @@
 // and the shortcut's window) and `approveCore` is what decides: is it the code, is it still what was asked for, and then the
 // phase move and its records.
 import { join } from 'node:path';
+import { LOCK_PATH } from '../formats/lock.ts';
 import type { ApprovalRecord } from '../formats/state.ts';
 import { removeFile } from '../lib/atomic.ts';
 import { writeLock } from '../lib/fingerprint.ts';
 import { logLine } from '../lib/log.ts';
 import { readState, updateStateLocked, withLock } from '../lib/store.ts';
-import { snapshotProtectedLocked } from '../guard/tamper.ts';
 import { buildCtx } from '../guard/context.ts';
+import { loadRecord } from '../guard/tamperrecord.ts';
+import { takeInFiles } from '../guard/tampertake.ts';
 import type { Ctx, Phase } from '../types.ts';
 import { acceptLocked } from './accept.ts';
 import { acceptEditsLocked, changesIn, editFingerprints, hasNoRecord, listChanges, NO_RECORD_YET } from './changes.ts';
@@ -45,6 +47,7 @@ function apply(ctx: Ctx, pending: Pending, next: Phase, shown?: Record<string, s
   const { kind } = pending;
   if (kind === 'freeze') {
     if (ctx.plan === null) return refused('there is no plan to freeze');
+    loadRecord(ctx); // a damaged record throws here, before anything changes: the freeze keeps the record's other entries, so it has to be readable (R83)
     writeLock(ctx.root, ctx.plan); // first: if a planned file is not there it throws, and nothing has changed
   }
   // An edit takes the owner's own changes to the protected files into the guard's record (and the lock), or its next check would
@@ -66,8 +69,10 @@ function apply(ctx: Ctx, pending: Pending, next: Phase, shown?: Record<string, s
   logLine(ctx.root, `Owner approved ${kind}`);
   if (fresh) logLine(ctx.root, 'Owner took a fresh record of the protected files');
   else if (accepted.length > 0) logLine(ctx.root, `Owner accepted their own edits to: ${accepted.join(', ')}`);
-  // The files this changed are protected: take them into the guard's record, or its next check would put them back.
-  if (kind === 'freeze') snapshotProtectedLocked(buildCtx(ctx.root, ctx.dataDir, ctx.pluginRoot, ctx.now));
+  // The files this changed are protected: take them into the guard's record, or its next check would put them back. A freeze takes in
+  // only what it covers, the files that were fingerprinted for the owner, the new lock and the used-up request, and leaves the rest of the
+  // record as it was: a protected file outside the freeze (the old app) that changed while the approval waited is still caught (R83).
+  if (kind === 'freeze') takeInFiles(buildCtx(ctx.root, ctx.dataDir, ctx.pluginRoot, ctx.now), [...Object.keys(pending.fingerprints), LOCK_PATH, PENDING_PATH]);
   else acceptLocked(ctx, PENDING_PATH);
   return { ok: true, kind, phase: next };
 }

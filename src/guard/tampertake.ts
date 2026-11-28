@@ -7,7 +7,7 @@ import { classify } from '../lib/paths.ts';
 import type { PathClass } from '../lib/paths.ts';
 import { PHASES } from '../types.ts';
 import type { Ctx } from '../types.ts';
-import { absOf, fold, measure } from './tamperrecord.ts';
+import { absOf, fold, loadRecord, measure, saveRecord } from './tamperrecord.ts';
 import type { TamperRecord } from './tamperrecord.ts';
 import { look } from './tamperscan.ts';
 
@@ -30,6 +30,18 @@ export function frozenCode(ctx: Ctx): (key: string) => boolean {
     ),
   );
   return (key) => planned.has(fold(key));
+}
+
+/**
+ * Take each of these files (paths from the repo root) into the record as it is now, and leave every other entry of it as it is (R83): a
+ * protected file outside what was approved that changed meanwhile must still be caught. False, and nothing done, if there is no record.
+ */
+export function takeInFiles(ctx: Ctx, keys: readonly string[]): boolean {
+  const rec = loadRecord(ctx);
+  if (rec === null) return false;
+  for (const key of keys) takeIn(ctx, rec, key);
+  saveRecord(ctx, rec);
+  return true;
 }
 
 /**
