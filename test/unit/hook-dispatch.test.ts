@@ -22,7 +22,8 @@ const SILENT = { stdout: '', exitCode: 0 };
 const deciders = [decideWrite, decideCommand, decideRead];
 
 beforeEach(() => {
-  for (const fn of deciders) vi.mocked(fn).mockReset().mockReturnValue(ALLOW);
+  vi.mocked(decideWrite).mockReset().mockResolvedValue(ALLOW);
+  for (const fn of [decideCommand, decideRead]) vi.mocked(fn).mockReset().mockReturnValue(ALLOW);
   vi.mocked(checkTamper).mockReset().mockReturnValue({ problems: [] });
 });
 
@@ -85,7 +86,7 @@ describe('Before a tool runs: which decision gets the call', () => {
 describe('what a refusal from a decision turns into', () => {
   test('a deny is printed as the deny, with the decision\'s own reason, counted and logged', async () => {
     const app = await makeApp({ phase: 'build' });
-    vi.mocked(decideWrite).mockReturnValue({ kind: 'deny', reason: 'only builders write app code' });
+    vi.mocked(decideWrite).mockResolvedValue({ kind: 'deny', reason: 'only builders write app code' });
     const out = await call(app, write(app, 'src/a.ts', 'x'));
     expect(printed(out)).toEqual({
       hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'only builders write app code' },
@@ -96,7 +97,7 @@ describe('what a refusal from a decision turns into', () => {
 
   test('the log says who: a builder, a checker', async () => {
     const app = await makeApp({ phase: 'build' });
-    vi.mocked(decideWrite).mockReturnValue({ kind: 'deny', reason: 'no' });
+    vi.mocked(decideWrite).mockResolvedValue({ kind: 'deny', reason: 'no' });
     await call(app, write(app, 'a.ts', 'x', asBuilder('b-1')));
     expect(logOf(app.root)).toMatch(/Blocked: builder tried Write/);
   });

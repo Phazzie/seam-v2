@@ -12,6 +12,7 @@
 // sure, so every doubt (an unreadable or oversized list, a path it cannot resolve) is a reason to look.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { staysOnNetwork } from '../lib/pathcheck.ts';
 import { resolveReal } from '../lib/realpath.ts';
 import type { HookInput } from '../types.ts';
 import { describeError } from './output.ts';
@@ -86,14 +87,18 @@ export function whySeamPossible(input: HookInput, dataDir: string | null, option
     for (const dir of folders) {
       if (existsSync(join(dir, STATE_FILE))) return `${dir} holds ${STATE_FILE}`;
     }
-    // Only now, with no project found by walking, is the list read (the same order the full lookup uses).
+    // Only now, with no project found by walking, is the list read (the same order the full lookup uses). It is
+    // not read from a data folder on the network (that would ask its host): not knowing is a doubt (R46).
+    if (dataDir !== null && staysOnNetwork(dataDir)) return networkReason(dataDir, 'the plugin data folder');
     for (const root of listedRoots(dataDir)) {
       if (EXTENDED_TEXT.test(root)) return networkReason(root, 'the listed project');
       // A listed network project is written by registerProject in its canonical `//host/share/...` form, and the
       // full lookup only ever matches it with a path that is itself on the network. Such a path is a doubt above,
       // so this entry cannot change the answer, and resolving it would ask the host (a stale entry for a host
-      // that does not answer would cost every call, in every folder, the whole time limit).
-      if (NETWORK_TEXT.test(root)) continue;
+      // that does not answer would cost every call, in every folder, the whole time limit). It is skipped only
+      // while it is still a network path once Windows spellings are made ordinary (R46): `//localhost/c$/x` is
+      // this machine's own folder, so it is resolved and checked locally like any other.
+      if (staysOnNetwork(root)) continue;
       const listed = resolve(root, '.');
       if (NETWORK_TEXT.test(listed)) return networkReason(listed, 'the listed project leads to');
       if (folders.has(listed)) return `${listed} is on the project list`;

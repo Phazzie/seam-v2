@@ -18,7 +18,7 @@ vi.mock('../../src/lib/heartbeat.ts', async (importOriginal) => {
 
 beforeEach(() => {
   vi.mocked(touchHeartbeat).mockClear();
-  vi.mocked(decideWrite).mockReset().mockReturnValue({ kind: 'allow' });
+  vi.mocked(decideWrite).mockReset().mockResolvedValue({ kind: 'allow' });
 });
 
 describe('every hook run in a seam project checks in once, and no other does', () => {
@@ -29,7 +29,7 @@ describe('every hook run in a seam project checks in once, and no other does', (
     ['a call after a tool', async (app: App) => call(app, post('Bash', { command: 'ls' }))],
     ['a call to a tool the guard does not decide', async (app: App) => call(app, pre('Agent', { prompt: 'x' }))],
     ['a denied call', async (app: App) => {
-      vi.mocked(decideWrite).mockReturnValue({ kind: 'deny', reason: 'no' });
+      vi.mocked(decideWrite).mockResolvedValue({ kind: 'deny', reason: 'no' });
       return call(app, write(app, 'a.ts', 'x'));
     }],
     ['a call that crashes', async (app: App) => call(app, write(app, 'a.ts', 'x'), { env: envFor(app, { SEAM_TEST_FORCE_THROW: '1' }) })],

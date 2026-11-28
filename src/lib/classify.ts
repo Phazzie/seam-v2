@@ -11,17 +11,21 @@ export type PathClass =
   | 'contracts' | 'tests' | 'fixtures' | 'config-file' | 'app-code' | 'generated' | 'ignored'
   | 'other-in-repo' | 'outside';
 
-/** `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as code). */
-const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore)$/i;
+/**
+ * `package.json`, `tsconfig*.json`, `vitest.config.*` and the like, plus `.gitignore` (what it lists decides what counts as
+ * code), and the files that make a tool run code or read its settings from the repo (R52): `.npmrc`, `.yarnrc`,
+ * `.yarnrc.yml`, `.babelrc`, `.babelrc.*`, `babel.config.*`, `.swcrc`, `.env`, `.env.*`, `.nvmrc`, `.node-version`, `.tool-versions`.
+ */
+const CONFIG_NAME = /^(?:package(?:-lock)?\.json|tsconfig.*\.json|(?:vitest|vite|eslint)\.config\..+|\.gitignore|\.npmrc|\.yarnrc(?:\.yml)?|\.babelrc(?:\..+)?|babel\.config\..+|\.swcrc|\.env(?:\..+)?|\.nvmrc|\.node-version|\.tool-versions)$/i;
 /** Folders only a build tool writes, when they sit at the top of the repo or the app (and `node_modules` anywhere). */
 const OUTPUT_DIRS = new Set(['dist', '.next', '.nuxt', '.output', '.svelte-kit', '.turbo', '.vercel', 'coverage', '.vite', '.parcel-cache']);
 const TEST_DIRS = new Set(['tests', 'test']);
 
-/** Is `relPath` a file the build rules treat as code? (`.json` and `.sql` count, except under `probes/` and `.seam/`.) */
+/** Is `relPath` a file the build rules treat as code? (`.ts .tsx .js .jsx .mjs .cjs .mts .cts`; `.json` and `.sql` count, except under `probes/` and `.seam/`.) */
 export function isCodeFile(relPath: string): boolean {
   const parts = posix.normalize(relPath.replace(/\\/g, '/')).split('/').map(tidyPart).filter((part) => part !== '');
   const path = parts.join('/').toLowerCase();
-  if (/\.(?:tsx?|jsx?|mjs|cjs)$/.test(path)) return true;
+  if (/\.(?:[cm]?[jt]s|[jt]sx)$/.test(path)) return true;
   return /\.(?:json|sql)$/.test(path) && !/^(?:probes|\.seam)\//.test(path);
 }
 
@@ -31,6 +35,10 @@ interface View { base: string; rel: string }
 const first = (path: string): string => path.split('/')[0];
 const hasFirst = (views: View[], names: Set<string> | string): boolean =>
   views.some((v) => (typeof names === 'string' ? first(v.rel) === names : names.has(first(v.rel))));
+/** Is a path (from the repo root, and from the app folder when that is elsewhere) inside `node_modules` or a build tool's output folder? */
+export function inBuildOutput(inRepo: string, inApp: string | null): boolean {
+  return inRepo.split('/').includes('node_modules') || [inRepo, inApp].some((p) => p !== null && OUTPUT_DIRS.has(first(p)));
+}
 /** Does one of the listed plan paths (a file, or a folder and everything in it) cover this path? */
 const covered = (views: View[], entries: readonly string[]): boolean =>
   entries.some((entry) => views.some((v) => {
@@ -122,6 +130,6 @@ export function classify(ctx: Ctx, absPath: string): PathClass {
   if (covered(views, plan?.generated ?? [])) return 'generated';
   // `.git/` holds git's own settings, hooks and exclude list: all of them can change what counts as code.
   if (CONFIG_NAME.test(basename(inRepo)) || hasFirst(views, '.git') || covered(views, plan?.config ?? [])) return 'config-file';
-  if (inRepo.split('/').includes('node_modules') || hasFirst(views, OUTPUT_DIRS) || gitIgnores(root, inRepo)) return 'ignored';
+  if (inBuildOutput(inRepo, inApp) || gitIgnores(root, inRepo)) return 'ignored';
   return isCodeFile(inApp ?? inRepo) ? 'app-code' : 'other-in-repo';
 }

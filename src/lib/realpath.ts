@@ -55,7 +55,7 @@ function isLocalHost(host: string): boolean {
  * network path that is not a local drive alias is returned as it is; `settle` then refuses it
  * unless it is on the root's share. Throws for what it refuses.
  */
-function plainPath(p: string): string {
+export function plainPath(p: string): string {
   if (!WIN) return p;
   let path = p;
   if (/^[\\/]{2}[?.][\\/]/.test(p)) {

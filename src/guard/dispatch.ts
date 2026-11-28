@@ -1,6 +1,7 @@
 // Which decision a tool call goes to. The decision modules are loaded when they are needed, with
-// `import()`, so a hook run pays only for the one it uses (the write decision brings in the TypeScript
-// parser, which a read or a command never needs; Ruling R29).
+// `import()`, so a hook run pays only for the one it uses (Ruling R29). The write decision is async for the
+// same reason one level down: it loads the TypeScript parser only when a builder's code or a contract has to
+// be read (R47), so a write decided by the kind of path alone stays as quick as a read.
 import type { Ctx, Decision, HookInput } from '../types.ts';
 import type { HookEvent } from './output.ts';
 
@@ -22,7 +23,7 @@ export async function decide(input: HookInput, event: HookEvent, ctx: Ctx): Prom
     return problems.length === 0 ? ALLOW : { kind: 'deny', reason: problems.join('; ') };
   }
   const tool = input.tool_name ?? '';
-  if (WRITE_TOOLS.has(tool)) return (await import('./write.ts')).decideWrite(input, ctx);
+  if (WRITE_TOOLS.has(tool)) return await (await import('./write.ts')).decideWrite(input, ctx);
   if (COMMAND_TOOLS.has(tool)) return (await import('./command.ts')).decideCommand(input, ctx);
   if (READ_TOOLS.has(tool)) return (await import('./read.ts')).decideRead(input, ctx);
   return ALLOW;

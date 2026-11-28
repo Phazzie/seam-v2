@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { loadJson } from '../formats/read.ts';
 import { STATE_PATH } from '../formats/state.ts';
+import { staysOnNetwork } from './pathcheck.ts';
 import { resolveReal } from './realpath.ts';
 
 export const REGISTRY_FILE = 'projects.json';
@@ -14,11 +15,18 @@ const RegistrySchema = z.strictObject({ projects: z.array(z.string()) });
 
 export type ProjectLookup = { kind: 'none' } | { kind: 'seam'; root: string } | { kind: 'missing'; root: string };
 
-/** The listed project roots, as resolveReal spells them. An absent list is an empty one. Throws if it cannot be read. */
-function listed(dataDir: string): string[] {
-  const saved = loadJson(RegistrySchema, dataDir, REGISTRY_FILE);
-  return (saved?.projects ?? []).map((root) => resolveReal(root, '.'));
+/** The listed project roots as written. An absent list is an empty one. Throws if it cannot be read. */
+function written(dataDir: string): string[] {
+  return loadJson(RegistrySchema, dataDir, REGISTRY_FILE)?.projects ?? [];
 }
+
+/**
+ * A listed root as resolveReal spells it, or null for one that is still a network path once its Windows
+ * spellings are made ordinary: it is not resolved (that would ask its host, and a stale entry for a host that
+ * does not answer would cost every call the whole time limit). The admin-share alias of a local drive is a
+ * local folder and is resolved like any other (R46).
+ */
+const spelled = (root: string): string | null => (staysOnNetwork(root) ? null : resolveReal(root, '.'));
 
 /**
  * Say, in the data folder, that the project list could not be used. The guard carries on as if the
@@ -48,9 +56,14 @@ export function findProject(cwd: string, dataDir: string): ProjectLookup {
   for (let up = dirname(start); up !== folders.at(-1); up = dirname(up)) folders.push(up);
   const found = folders.find((dir) => existsSync(join(dir, STATE_PATH)));
   if (found !== undefined) return { kind: 'seam', root: found };
+  // The list is never read from a data folder on the network (that would ask its host): not knowing is a doubt.
+  if (staysOnNetwork(dataDir)) {
+    throw new Error(`the plugin data folder ${dataDir} is on the network, so the project list was not read`);
+  }
   let known: Set<string>;
   try {
-    known = new Set(listed(dataDir));
+    // A network entry can only match a path that is itself on the network, which is a doubt already (R44), so it is left out.
+    known = new Set(written(dataDir).map(spelled).filter((root): root is string => root !== null));
   } catch (err) {
     warn(dataDir, start, err);
     return { kind: 'none' };
@@ -65,7 +78,7 @@ export function findProject(cwd: string, dataDir: string): ProjectLookup {
  */
 export function registerProject(root: string, dataDir: string): void {
   const entry = resolveReal(root, '.');
-  const projects = listed(dataDir);
+  const projects = written(dataDir).map((root) => spelled(root) ?? root); // a network entry stays as written
   if (projects.includes(entry)) return;
   const file = join(dataDir, REGISTRY_FILE);
   const temp = `${file}.${process.pid}.tmp`;

@@ -83,6 +83,19 @@ for (const entry of ['dist/hook.mjs', 'dist/hook-worker.mjs']) {
   }
 }
 
+// Fail the build if the write decision would load the TypeScript parser as soon as it is loaded (R47). Only a
+// builder's code write and a contract write need it; a write decided by the kind of path, the phase or the turn
+// must not pay for it, so write.ts reaches it only through import() (a dynamic-import chunk has an entryPoint).
+for (const [file, out] of Object.entries(outputs)) {
+  if (!out.entryPoint?.endsWith('src/guard/write.ts')) continue;
+  const eager = loadedAtStart(file).filter((chunk) => Object.keys(outputs[chunk].inputs).some((input) => input.includes('node_modules/typescript/')));
+  if (eager.length > 0) {
+    console.error(`${file} (the write decision) would load the TypeScript parser as soon as it loads (it is in ${eager.join(', ')}).`);
+    console.error('Load lockcheck.ts and rules.ts with import() inside the function that needs them.');
+    process.exit(1);
+  }
+}
+
 // The hook finds its worker by name, next to itself.
 if (!('dist/hook-worker.mjs' in outputs)) {
   console.error('dist/hook-worker.mjs was not built; the hook cannot run its decisions without it.');

@@ -4,4 +4,4 @@ import { dirname as __seamDirname } from 'node:path';
 const require = __seamCreateRequire(import.meta.url);
 const __filename = __seamFileURLToPath(import.meta.url);
 const __dirname = __seamDirname(__filename);
-import"./chunk-WB35BGNL.mjs";function i(t,o){return{kind:"allow"}}export{i as decideWrite};
+import"./chunk-FNSR2DX5.mjs";function e(t,o){return{kind:"allow"}}export{e as decideRead};
