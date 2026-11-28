@@ -38,6 +38,9 @@ describe('fs, require and dynamic import', () => {
     "void import('./x');", 'const m = await import(name);', "import { createRequire } from 'node:module';",
     "import { createRequire } from 'module';", "eval('1');", "new Function('return 1');", "Function('return 1')();",
     'const r = require;', "process.binding('fs');", "process.mainModule!.require('fs');", "const { binding } = process;",
+    "process.getBuiltinModule('fs');", "process.getBuiltinModule('node:fs').readFileSync('x');", "process['getBuiltinModule']('fs');",
+    'process.getBuiltinModule(name);', 'process.getBuiltinModule();', "globalThis.process.getBuiltinModule('fs');",
+    "(process as NodeJS.Process).getBuiltinModule('fs');", "const { getBuiltinModule } = process;", "const get = process.getBuiltinModule;",
   ])('%s is refused', (src) => expect(check(src)).toEqual(BANNED));
 
   test.each([
@@ -45,7 +48,7 @@ describe('fs, require and dynamic import', () => {
     "import x from 'fsevents';", "import x from './fs';", 'const require2 = 1;', 'const o = { require: true };',
     'interface O { require: boolean }', 'const a = o.require;', "// require('fs')", "const s = \"import('fs')\";",
     "const s = `require('fs')`;", 'const a = { eval: 1 }; a.eval;', 'const f = (x: unknown) => x instanceof Function;',
-    "import x from 'fs-like';", 'const a = process.platform;',
+    "import x from 'fs-like';", 'const a = process.platform;', "const a = loader.getBuiltinModule('fs');", 'const getBuiltinModule = 1;',
   ])('%s is fine', (src) => expect(check(src)).toEqual([]));
 
   test('the reason names what is banned, for each way in', () => {
